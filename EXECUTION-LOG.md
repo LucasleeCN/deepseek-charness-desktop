@@ -23,4 +23,10 @@
   - `[desktop] Loading http://127.0.0.1:63283`
   - `[desktop] Renderer ready {"title":"DeepSeek Harness","readyState":"complete","bodyTextLength":32}` —— **官方 UI 在沙箱 WebContentsView 中加载完成**。
 - Electron 多进程正常（主进程+渲染+GPU）；验证后已停止并清理进程与端口。
-- 下一步：1.4 QA 冒烟（三钩子：截图 / 窗口控制 / 自动退出）。
+
+## M4 — 1.4 QA 冒烟（完成）
+
+- ✅ Run 1（截图 + 自动退出）：desktop.log 记录 `QA screenshot saved to ...\qa\screenshot-1.png`；文件 **100,371 字节**（>10KB 达标）；自动退出干净（`Stopping Harness` → `[dsh:exit] SIGTERM`，exit 0）。注：WGC 截图器有瞬时 `Failed to start capture` 错误日志，但 desktopCapturer 兜底成功，不影响验收。
+- ✅ Run 2（窗口控制 + 自动退出）：`Window controls QA passed: maximize, restore, minimize`；`Testing the custom close action` 后正常退出。
+- ✅ 无残留 electron/node 进程。
+- 下一步：1.5 `npm run build:windows`（electron-builder NSIS + portable + 源码包 + SHA256SUMS）。
