@@ -24,3 +24,8 @@ build/THIRD_PARTY_LICENSES.txt
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# QA artifacts (evidence kept on disk, not committed)
+qa/
+dist/
+

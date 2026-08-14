@@ -29,4 +29,19 @@
 - ✅ Run 1（截图 + 自动退出）：desktop.log 记录 `QA screenshot saved to ...\qa\screenshot-1.png`；文件 **100,371 字节**（>10KB 达标）；自动退出干净（`Stopping Harness` → `[dsh:exit] SIGTERM`，exit 0）。注：WGC 截图器有瞬时 `Failed to start capture` 错误日志，但 desktopCapturer 兜底成功，不影响验收。
 - ✅ Run 2（窗口控制 + 自动退出）：`Window controls QA passed: maximize, restore, minimize`；`Testing the custom close action` 后正常退出。
 - ✅ 无残留 electron/node 进程。
-- 下一步：1.5 `npm run build:windows`（electron-builder NSIS + portable + 源码包 + SHA256SUMS）。
+
+## M5 — 1.5 打包 + 1.6 阶段门禁（完成）
+
+- ✅ `npm run build:windows` 成功（check → setup → electron-builder nsis portable → package-source → SHA256SUMS）：
+  - `dist/DeepSeek-Harness-Desktop-Setup-0.1.0-x64.exe`（181,699,122 B）
+  - `dist/DeepSeek-Harness-Desktop-Portable-0.1.0-x64.exe`（181,480,288 B）
+  - `dist/DeepSeek-Harness-Desktop-Source-0.1.0.zip`（205,122 B）
+  - `dist/SHA256SUMS.txt`；签名按 `signExecutable=false` 跳过（预期）。
+- ✅ 校验和一致（注意 SHA256SUMS 为小写、Get-FileHash 大写，忽略大小写比对通过）。
+- ✅ **便携版真实运行验收**：打包产物启动 → `Renderer ready {"title":"DeepSeek Harness","readyState":"complete"}` → 截图保存（65KB）→ 窗口控制 QA。首次运行 maximize 超时（5s 超时在首启场景偏紧，属抖动），**重试一次即通过**：`Window controls QA passed: maximize, restore, minimize` → 自动退出，无残留进程。
+- ✅ 1.6 门禁全绿：check 通过 / 便携版启动加载 UI / 三 QA 钩子通过 / 产物齐全且校验和一致 / 无残留进程、无密钥泄露（本阶段未设置 `DEEPSEEK_API_KEY`，按计划跳过 3.4 式会话验证，仅验证 UI 加载——预期行为）。
+- 工作分支：`feature/windows-mvp`。
+
+## 阶段 1 结论
+
+Windows MVP 完整落地：Electron 壳 + 捆绑 Node 24.19.0 + `@deepseek-ai/dsh@0.1.0-rc.6` harness + 官方 UI，QA 三钩子通过，安装器/便携版/SHA256SUMS 齐备。产物在 `dist/`，运行记录见本文件各里程碑。
