@@ -2,6 +2,12 @@ MIT License
 
 Copyright (c) 2026 DeepSeek Harness Desktop contributors
 
+This license covers the desktop shell implementation in this repository
+(main.js, preload.js, shell.html and the build scripts), which is original
+code. Bundled third-party components (@deepseek-ai/dsh, Electron, Node.js and
+their dependency trees) remain under their own licenses; see
+THIRD_PARTY_NOTICES.md.
+
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
 in the Software without restriction, including without limitation the rights

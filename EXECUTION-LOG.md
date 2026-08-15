@@ -45,3 +45,18 @@
 ## 阶段 1 结论
 
 Windows MVP 完整落地：Electron 壳 + 捆绑 Node 24.19.0 + `@deepseek-ai/dsh@0.1.0-rc.6` harness + 官方 UI，QA 三钩子通过，安装器/便携版/SHA256SUMS 齐备。产物在 `dist/`，运行记录见本文件各里程碑。
+
+## M6 — clean-room 壳重写（完成，2026-08-15 用户决策）
+
+- 背景：用户要求壳代码不照抄参考实现。
+- 范围：main.js / preload.js / shell.html 三个文件从零重写（分支 feature/cleanroom-shell，提交 e66cbd0，461+/518-）；行为契约不变（42px 标题栏 + WebContentsView 沙箱、spawn dsh web --port 0 + URL 行 90s、导航白名单、IPC、单实例锁、QA 三钩子、desktop.log）。
+- 保留：harness/（@deepseek-ai/dsh 官方包）、Node/Electron 发行物、构建/打包流水线（依赖管理与基础设施，非壳代码）。
+- ✅ npm run check 通过（Source verification passed.）。
+- ✅ QA 冒烟三钩子通过：截图（61KB）/ Window controls QA passed / 自动退出，无残留。
+- ✅ 重新打包：Setup + Portable + Source + SHA256SUMS；便携版真实运行验收一次通过（Renderer ready → 截图 → 窗口控制 QA → 自动退出），校验和一致。
+- ✅ README/LICENSE 署名更新：壳为本仓库原创（MIT），第三方依赖署名保留。
+
+## 阶段 1（clean-room 版）结论
+
+Windows MVP 以原创壳代码交付：行为与文档契约一致，QA 与打包全绿。产物在 dist/（clean-room 版）。
+

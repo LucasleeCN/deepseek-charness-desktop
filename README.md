@@ -126,10 +126,12 @@ npm run build:portable
 
 ## 上游、图标和许可证
 
-壳代码采用 [MIT License](LICENSE)。DeepSeek Harness 及官方鲸鱼图标归上游项目所有，
-按其 MIT 许可证使用和署名。完整信息见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+桌面壳（`main.js` / `preload.js` / `shell.html` 与构建脚本）为本仓库**原创实现**，采用
+[MIT License](LICENSE)。DeepSeek Harness 及官方鲸鱼图标归 [deepseek-ai](https://github.com/deepseek-ai) 所有，
+按其 MIT 许可证使用和署名；本壳所依赖的 `@deepseek-ai/dsh`、Electron、Node.js 均为第三方发行物，
+各自许可证见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
-- 上游项目：[deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)
+- Harness 上游项目：[deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)
 - Electron：[electron/electron](https://github.com/electron/electron)
 - Node.js：[nodejs/node](https://github.com/nodejs/node)
 
