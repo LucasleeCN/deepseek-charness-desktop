@@ -178,6 +178,9 @@ if (manifest.build?.mac?.hardenedRuntime !== false || manifest.build?.mac?.gatek
   if (!rootBuildProfile.includes('compatibleSdkVersion')) {
     throw new Error('harmonyos/build-profile.json5 must declare compatibleSdkVersion.')
   }
+  if (/keyPassword|storePassword|certpath|\.ohos[\\/]config/i.test(rootBuildProfile)) {
+    throw new Error('harmonyos/build-profile.json5 must not contain local signing passwords or user paths (enable auto-signing in DevEco without committing it).')
+  }
 }
 // Installer policy (user decision 2026-08-15): the install path is user
 // selectable, defaults to a non-system drive, and C: is rejected. Enforced by
@@ -203,6 +206,11 @@ for (const relativePath of publicFiles) {
   }
   if (/DEEPSEEK_API_KEY\s*=\s*\S+/i.test(content)) {
     throw new Error(`A populated DEEPSEEK_API_KEY was found in ${relativePath}.`)
+  }
+  const privateIps = content.match(/(?:10\.\d{1,3}|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.)\d{1,3}\.\d{1,3}/g) ?? []
+  const unexpectedIps = privateIps.filter(ip => ip !== '192.168.1.100')
+  if (unexpectedIps.length > 0) {
+    throw new Error(`A real-looking private LAN address was found in ${relativePath}: ${unexpectedIps.join(', ')} (use <PC-IP> instead).`)
   }
 }
 
