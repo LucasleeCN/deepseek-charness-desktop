@@ -120,7 +120,20 @@ webserver 绑定局域网。假设用 8080 端口：
 
 两条路径的验收都必须完成真实 `/api` 交互，仅页面加载不算通过。
 
-## 5. 已知限制
+## 5. 排障：`Install Failed: no signature file (code 9568320)`
+
+构建成功但 HAP 是 `entry-default-unsigned.hap`，真机拒绝安装。修复：
+
+1. 登录华为账号：`File → Settings → Huawei Account`。
+2. `File → Project Structure → Signing Configs` → 勾选
+   **Automatically generate signature** → 按提示自动生成调试证书/Profile
+   （bundleName 保持 `com.deepseek.harness.desktop`）→ Apply/OK。
+3. 重新 `Build → Build Hap(s)/APP(s)`：输出应变为
+   `entry-default-signed.hap`，Run 即可安装。
+4. 真机需开启开发者模式/USB 调试，并加入华为账号的调试设备授权
+   （Device Manager 或 DevEco 弹出的 UDID 注册提示）。
+
+## 6. 已知限制
 
 - 宿主机 IP 变化后需在 App 里更新地址（不自动发现）。
 - 官方 UI 的目录选择器等“坐在宿主机前”的交互在远端不可用；需要远端浏览时

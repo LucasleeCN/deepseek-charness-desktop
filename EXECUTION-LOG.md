@@ -169,3 +169,15 @@ Code Review 三条结论均已修复：
   用户侧有运行中的桌面实例）；macOS 上 `scripts/verify-macos.sh` 新增了
   `DSH_DESKTOP_QA_REMOTE` 钩子（开启→LAN 发现→关闭），待用户下次运行反馈。
 
+## M12 — HarmonyOS DevEco 首次构建结果（2026-08-15）
+
+- 用户在 DevEco 打开 `harmonyos/`：**Build task in 8s 889ms，构建成功**，
+  产出 `entry/build/default/outputs/default/entry-default-unsigned.hap`。
+- 首次 Run 失败：`Install Failed: code 9568320 no signature file` ——
+  属预期（未配置自动签名），与工程/代码无关。
+- 处理：已在 `harmonyos/README.md` 新增“排障：no signature file”章节
+  （登录华为账号 → Project Structure → Automatically generate signature →
+  重建得到 signed HAP → 真机 UDID 授权）。
+- 待用户按步骤签名后重新 Run 并执行 3.5 验收（UI 加载 / 真实会话 / 重连 /
+  重启记忆）。
+
