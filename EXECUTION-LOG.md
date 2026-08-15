@@ -197,8 +197,13 @@ Code Review 三条结论均已修复：
   - `Index.ets` 在加载宿主页面前用 `@kit.NetworkKit` 预取 HTML，注入
     `crypto.randomUUID` polyfill，再通过 `onInterceptRequest` 把修改后的
     主文档响应交给 ArkWeb（polyfill 在官方 bundle 执行前生效）；
+  - 真机复验发现 `crypto.randomUUID = fn` 直接赋值在 ArkWeb 上会被静默
+    忽略，已改为 `Object.defineProperty(crypto, 'randomUUID', …)`；
+    注入后设备上 `typeof crypto.randomUUID === 'function'`，官方 UI 不再
+    retry，成功进入欢迎声明/模型选择等真实数据流；
   - 增加 `.databaseAccess(true)`；修复 `onErrorReceive` → `onPageEnd`
-    覆盖错误状态的顺序 bug（loadError 门闩）；启动/手动连接统一走
+    覆盖错误状态的顺序 bug（loadError 门闩），且 onErrorReceive 只处理
+    主文档错误（子资源错误不再误弹整页错误）；启动/手动连接统一走
     prepareBootstrap，状态栏显示当前连接 URL；
   - `module.json5` 增加 `ohos.permission.GET_NETWORK_INFO`；
   - 曾尝试 `network.cleartextTraffic` 但被 DevEco 6.1.1 的 module schema

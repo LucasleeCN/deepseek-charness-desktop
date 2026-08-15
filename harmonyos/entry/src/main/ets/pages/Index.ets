@@ -13,15 +13,17 @@ const KEY_HOST_URL: string = 'host_url';
  * HTML and injects this polyfill before the page scripts run.
  */
 const UUID_POLYFILL_SCRIPT: string =
-  '<script>(function(){try{var c=globalThis.crypto||(globalThis.crypto={});' +
-  'if(typeof c.randomUUID!=="function"){c.randomUUID=function(){' +
-  'var b=new Uint8Array(16);var g=c.getRandomValues?c.getRandomValues(b):null;' +
-  'if(g){b[6]=(b[6]&15)|64;b[8]=(b[8]&63)|128;' +
-  'var h=Array.prototype.map.call(b,function(x){return ("0"+x.toString(16)).slice(-2)}).join("");' +
-  'return h.slice(0,8)+"-"+h.slice(8,12)+"-"+h.slice(12,16)+"-"+h.slice(16,20)+"-"+h.slice(20)}' +
-  'var f="xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx";' +
-  'return f.replace(/[xy]/g,function(ch){var r=Math.random()*16|0;var v=ch==="x"?r:(r&3|8);return v.toString(16)})' +
-  '}}}}catch(e){}})();</script>'
+  '<script>(function(){try{var c=globalThis.crypto;' +
+  'if(!c){c={};try{globalThis.crypto=c}catch(_){}}' +
+  'if(typeof c.randomUUID!=="function"){var make=function(){' +
+  'var b=new Uint8Array(16);' +
+  'if(c.getRandomValues){c.getRandomValues(b)}else{for(var i=0;i<16;i++){b[i]=Math.floor(Math.random()*256)}}' +
+  'b[6]=(b[6]&15)|64;b[8]=(b[8]&63)|128;var h="";' +
+  'for(var j=0;j<16;j++){h+=("0"+b[j].toString(16)).slice(-2)}' +
+  'return h.slice(0,8)+"-"+h.slice(8,12)+"-"+h.slice(12,16)+"-"+h.slice(16,20)+"-"+h.slice(20)};' +
+  'try{Object.defineProperty(c,"randomUUID",{value:make,configurable:true,writable:true})}' +
+  'catch(e2){c.randomUUID=make}' +
+  '}}}catch(e){}})();</script>'
 
 @Entry
 @Component
@@ -237,17 +239,13 @@ struct Index {
             this.statusText = '已连接';
           })
           .onErrorReceive((event) => {
-            if (this.webSrc === '') {
+            if (this.webSrc === '' || !event || !event.request.isMainFrame()) {
               return;
             }
             this.connected = false;
             this.loadError = true;
             this.errorVisible = true;
-            if (event) {
-              this.statusText = `加载失败（错误码 ${event.error.getErrorCode()}），请检查宿主地址、防火墙与网络`;
-            } else {
-              this.statusText = '加载失败，请检查宿主地址、防火墙与网络';
-            }
+            this.statusText = `加载失败（错误码 ${event.error.getErrorCode()}），请检查宿主地址、防火墙与网络`;
           })
 
         if (this.errorVisible) {
