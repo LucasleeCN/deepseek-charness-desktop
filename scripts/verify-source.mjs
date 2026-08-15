@@ -51,8 +51,20 @@ if (JSON.stringify(harnessManifest.allowScripts) !== JSON.stringify(expectedInst
 if (manifest.build?.win?.signExecutable !== false) {
   throw new Error('Unsigned community builds must explicitly set win.signExecutable=false.')
 }
-if (manifest.build?.nsis?.allowToChangeInstallationDirectory !== false) {
-  throw new Error('The installer path must remain fixed to avoid legacy Windows path limits.')
+// Installer policy (user decision 2026-08-15): the install path is user
+// selectable, defaults to a non-system drive, and C: is rejected. Enforced by
+// build/installer.nsh; these assertions keep the policy from drifting.
+if (manifest.build?.nsis?.allowToChangeInstallationDirectory !== true) {
+  throw new Error('The installer must allow choosing the installation directory (nsis.allowToChangeInstallationDirectory=true).')
+}
+if (manifest.build?.nsis?.include !== 'build/installer.nsh') {
+  throw new Error('The installer policy header build/installer.nsh must be wired via nsis.include.')
+}
+{
+  const installerPolicy = await fs.readFile(path.join(projectRoot, 'build/installer.nsh'), 'utf8')
+  if (!installerPolicy.includes('NonCDrivePickDefault')) {
+    throw new Error('build/installer.nsh must define the non-system-drive default (NonCDrivePickDefault).')
+  }
 }
 
 const publicFiles = ['main.js', 'preload.js', 'shell.html', 'README.md', 'README.en.md', '.env.example']

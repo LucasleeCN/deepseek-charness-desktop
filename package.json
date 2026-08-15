@@ -98,12 +98,14 @@
       "oneClick": false,
       "perMachine": false,
       "allowElevation": true,
-      "allowToChangeInstallationDirectory": false,
+      "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "DeepSeek Harness Desktop",
       "uninstallDisplayName": "DeepSeek Harness Desktop (Unofficial)",
-      "deleteAppDataOnUninstall": false
+      "deleteAppDataOnUninstall": false,
+      "include": "build/installer.nsh",
+      "warningsAsErrors": false
     },
     "portable": {
       "artifactName": "DeepSeek-Harness-Desktop-Portable-${version}-${arch}.${ext}"

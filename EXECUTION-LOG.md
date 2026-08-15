@@ -60,3 +60,16 @@ Windows MVP 完整落地：Electron 壳 + 捆绑 Node 24.19.0 + `@deepseek-ai/ds
 
 Windows MVP 以原创壳代码交付：行为与文档契约一致，QA 与打包全绿。产物在 dist/（clean-room 版）。
 
+
+## M7 — 安装器路径策略（用户需求，2026-08-15）
+
+- 用户需求：严禁默认安装到 C 盘；安装器可选路径；交互安装不阻止用户选择 C 盘（允许自由选择）。
+- 实现：
+sis.allowToChangeInstallationDirectory=true（目录页可选路径）；新增 uild/installer.nsh（customInit 钩子）：默认目录若在 C 盘则重定位到第一个非系统盘（ FDD+HDD 枚举，跳过 C:）；用户显式 /D=<path> 时尊重用户选择不重定位。
+- 
+sis.warningsAsErrors=false：uninstaller 编译 pass 中 customInit 专用函数为未引用死代码（NSIS 6010 警告），属预期。
+- verify-source.mjs 断言更新（allowToChangeInstallationDirectory=true、include=build/installer.nsh、含 NonCDrivePickDefault）。
+- 运行时验证（真机）：T1 静默默认 → D:\DeepSeek Harness Desktop ✓；T2 静默 /D=C:\dsh-c-test → 安装到 C 盘 ✓（不阻止显式选择）；T3 静默 /D=D:\dsh-install-test → 安装成功 ✓。测试安装均已卸载清理。
+- 另：C 盘已安装的旧版本已卸载（%LOCALAPPDATA%\Programs\DeepSeek Harness Desktop，含注册表条目）。
+- 打包产物（9:49 最终版）：Setup/Portable/Source + SHA256SUMS，校验一致。
+
