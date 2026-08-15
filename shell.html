@@ -51,6 +51,8 @@
         cursor: default;
       }
       .titlebar__button:hover { background: #dde1e9; }
+      .titlebar__button--remote { width: 56px; font-size: 12px; }
+      .titlebar__button--remote.is-on { color: #4d6bfe; }
       .titlebar__button--close:hover { background: #e81123; color: #ffffff; }
 
       /* ---- startup view ---- */
@@ -87,6 +89,7 @@
       <div class="titlebar__controls">
         <button class="titlebar__button" id="minimize" title="最小化" aria-label="最小化">—</button>
         <button class="titlebar__button" id="maximize" title="最大化/还原" aria-label="最大化/还原">□</button>
+        <button class="titlebar__button titlebar__button--remote" id="remote" title="手机远程访问" aria-label="手机远程访问">手机</button>
         <button class="titlebar__button titlebar__button--close" id="close" title="关闭" aria-label="关闭">✕</button>
       </div>
     </header>
@@ -107,6 +110,25 @@
       document.getElementById('minimize').addEventListener('click', () => win.minimize())
       document.getElementById('maximize').addEventListener('click', () => win.toggleMaximize())
       document.getElementById('close').addEventListener('click', () => win.close())
+      document.getElementById('remote').addEventListener('click', () => win.openRemote())
+
+      // Reflect the phone remote-access mode in the title-bar button.
+      const remoteButton = document.getElementById('remote')
+      const remoteBridge = window.desktopRemote
+      if (remoteBridge) {
+        remoteBridge.onStateChange(state => {
+          remoteButton.classList.toggle('is-on', Boolean(state.enabled))
+          remoteButton.title = state.enabled
+            ? `手机远程访问已开启（端口 ${state.port}）`
+            : '手机远程访问'
+        })
+        void remoteBridge.getState().then(state => {
+          remoteButton.classList.toggle('is-on', Boolean(state.enabled))
+          remoteButton.title = state.enabled
+            ? `手机远程访问已开启（端口 ${state.port}）`
+            : '手机远程访问'
+        }).catch(() => {})
+      }
 
       // Keep the maximize button glyph in sync with the actual window state.
       const maximizeButton = document.getElementById('maximize')

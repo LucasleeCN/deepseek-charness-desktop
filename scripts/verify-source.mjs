@@ -40,6 +40,7 @@ const requiredFiles = [
   'package-lock.json',
   'package.json',
   'preload.js',
+  'remote.html',
   'scripts/build-windows.ps1',
   'scripts/build.sh',
   'scripts/generate-icons.mjs',
@@ -59,6 +60,15 @@ const harnessManifest = JSON.parse(await fs.readFile(path.join(projectRoot, 'har
 
 if (manifest.devDependencies?.electron !== '43.4.0') {
   throw new Error('Electron must remain pinned to 43.4.0 for this release.')
+}
+if (manifest.dependencies?.['qrcode-generator'] !== '2.0.4') {
+  throw new Error('qrcode-generator must remain pinned to 2.0.4 (used for the remote-access QR code).')
+}
+if (!manifest.build?.files?.includes('remote.html')) {
+  throw new Error('remote.html must be packaged with the desktop shell.')
+}
+if (!manifest.build?.files?.includes('node_modules/qrcode-generator/**')) {
+  throw new Error('qrcode-generator must be packaged with the desktop shell.')
 }
 if (harnessManifest.dependencies?.['@deepseek-ai/dsh'] !== '0.1.0-rc.6') {
   throw new Error('DeepSeek Harness must remain pinned to 0.1.0-rc.6 for this release.')
@@ -111,6 +121,21 @@ if (manifest.build?.mac?.hardenedRuntime !== false || manifest.build?.mac?.gatek
   if (!mainJs.includes("dataPath('harness-home', 'workspace')")) {
     throw new Error('main.js must confine the Harness cwd to <userData>/harness-home/workspace.')
   }
+  if (!mainJs.includes('new Tray(')) {
+    throw new Error('main.js must keep a tray-owned application lifecycle.')
+  }
+  if (!mainJs.includes('cordis.patch.yml')) {
+    throw new Error('main.js must manage the webserver profile patch for phone remote access.')
+  }
+  if (!mainJs.includes("host: 0.0.0.0")) {
+    throw new Error('main.js must bind the remote webserver to 0.0.0.0 via the profile patch.')
+  }
+  if (!mainJs.includes('LAN_URL_PATTERN')) {
+    throw new Error('main.js must parse the LAN URL printed by dsh web.')
+  }
+  if (!mainJs.includes('exerciseRemoteAccess')) {
+    throw new Error('main.js must keep the phone remote-access QA hook.')
+  }
 }
 // Cross-arch release policy: build.sh must prepare the runtime for the same
 // ARCH it hands to electron-builder, and must require Node.js 24.
@@ -158,7 +183,7 @@ if (manifest.build?.nsis?.include !== 'build/installer.nsh') {
   }
 }
 
-const publicFiles = ['main.js', 'preload.js', 'shell.html', 'README.md', 'README.en.md', 'harmonyos/README.md', '.env.example', 'scripts/build.sh', 'scripts/verify-macos.sh']
+const publicFiles = ['main.js', 'preload.js', 'shell.html', 'remote.html', 'README.md', 'README.en.md', 'harmonyos/README.md', '.env.example', 'scripts/build.sh', 'scripts/verify-macos.sh']
 for (const relativePath of publicFiles) {
   const content = await fs.readFile(path.join(projectRoot, relativePath), 'utf8')
   if (/C:\\Users\\[^\\]+/i.test(content)) {

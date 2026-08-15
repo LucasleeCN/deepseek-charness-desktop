@@ -27,7 +27,9 @@
     "build:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-windows.ps1",
     "build:mac": "bash scripts/build.sh"
   },
-  "dependencies": {},
+  "dependencies": {
+    "qrcode-generator": "2.0.4"
+  },
   "devDependencies": {
     "electron": "43.4.0",
     "electron-builder": "26.15.3"
@@ -46,8 +48,10 @@
       "main.js",
       "preload.js",
       "shell.html",
+      "remote.html",
       "build/deepseek-harness.svg",
       "build/icon.png",
+      "node_modules/qrcode-generator/**",
       "package.json"
     ],
     "extraResources": [

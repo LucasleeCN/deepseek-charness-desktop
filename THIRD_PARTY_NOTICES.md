@@ -40,3 +40,13 @@ The official Node.js license is included in the application resources as
 The build process generates `build/THIRD_PARTY_LICENSES.txt` from every npm
 package bundled below `harness/node_modules`. The generated file is included
 in each Windows distribution under `resources/licenses/`.
+
+## qrcode-generator
+
+- Package: `qrcode-generator`
+- Bundled version: `2.0.4`
+- License: MIT
+- Source: https://github.com/kazuhikoarase/qrcode-generator
+
+Used to render the QR code shown in the phone remote-access window. The
+package is bundled in the Electron asar under `node_modules/qrcode-generator`.

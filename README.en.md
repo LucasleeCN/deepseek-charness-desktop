@@ -119,22 +119,48 @@ CI: `.github/workflows/macos-release.yml` builds on `macos-15` (arm64) and
 tags. The screenshot QA is skipped in CI (no Screen Recording grant); the
 window-controls QA still runs.
 
+## Phone remote access (tray-hosted desktop + HarmonyOS companion)
+
+The desktop follows the "phone is a remote control, not a runtime" model:
+
+- **Tray lifecycle**: the close button hides the window to the system tray and
+  keeps the local Harness running; the tray menu can open the window, open the
+  remote-access settings, or quit (graceful Host shutdown).
+- **One-click remote mode**: the "手机" button in the title bar (or the tray
+  menu) opens the remote window. Enabling it writes the webserver profile patch
+  (`host: 0.0.0.0`, default port `8787`), restarts Harness, and shows the LAN
+  URL and QR code.
+- **Connect from HarmonyOS / a phone browser** on the same LAN using that URL.
+  Disabling the switch restores `127.0.0.1`.
+
+> [!WARNING]
+> `dsh web` has no TLS and no authentication. Remote mode exposes Harness to
+> the network — use it only on trusted LANs and turn it off afterwards.
+
 ## HarmonyOS thin client
 
 ### Topology
 
 ```text
-Your PC (Windows/macOS)                      HarmonyOS device / emulator
+Desktop app (Windows/macOS)                  HarmonyOS device / emulator
 ┌─────────────────────────────┐             ┌──────────────────────────┐
-│ dsh web bound to 0.0.0.0:8080│    LAN     │ harmonyos/ DevEco project │
-│ official UI + tool runtime   │ ─────────▶ │ ArkWeb loads http://<PC-IP>:8080 │
-└─────────────────────────────┘             └──────────────────────────┘
+│ tray-owned Host             │    LAN      │ harmonyos/ DevEco project │
+│ remote mode 0.0.0.0:8787    │ ──────────▶ │ ArkWeb loads the QR URL   │
+│ official UI + tool runtime  │             └──────────────────────────┘
+└─────────────────────────────┘
 ```
 
 The HarmonyOS app is a thin client: sessions, tools, and model calls all run on
 the host PC.
 
-### Host deployment (read this first)
+### Path A: connect to the desktop app (recommended)
+
+1. Open "Phone remote access" in the desktop app and enable the switch.
+2. Scan the QR code with the HarmonyOS app, or type the displayed
+   `http://<PC-IP>:8787`.
+3. The desktop window can be closed — the Host keeps running in the tray.
+
+### Path B: standalone `dsh web` host (CLI)
 
 **The CLI deliberately rejects `dsh web --host 0.0.0.0`** for safety. Binding to
 a non-loopback address is only possible via a user-level profile patch. For port
@@ -179,9 +205,10 @@ a non-loopback address is only possible via a user-level profile patch. For port
    `5.0.0(12)`).
 3. Sign in to DevEco with a Huawei account for free automatic signing on a real
    device, or use a local emulator.
-4. Enter the host address (default placeholder `http://192.168.1.100:8080` —
-   change it to the real PC IP) and tap Connect. The URL is persisted and
-   reloaded on startup; errors show a retry page.
+4. Enter the host address (desktop remote mode defaults to
+   `http://<PC-IP>:8787`; the CLI example is `http://<PC-IP>:8080`) and tap
+   Connect. The URL is persisted and reloaded on startup; errors show a retry
+   page.
 5. **Acceptance**: complete a real conversation (new session → question →
    streamed reply).
 
@@ -237,19 +264,20 @@ The HarmonyOS app persists only the host URL setting; no session data is stored.
 
 ## Security boundary
 
-- The desktop Harness service listens on a random `127.0.0.1` port;
+- The desktop Harness service listens on a random `127.0.0.1` port by default;
+  phone remote access is an explicit, reversible switch that binds
+  `0.0.0.0:<port>` and restores loopback when disabled;
 - the Harness child process is confined to
   `<userData>/harness-home/workspace` as its default workspace, never the
   user's home directory;
 - the official page runs in a `sandbox: true`, `contextIsolation: true`,
   `nodeIntegration: false` content view;
-- the custom title bar can only request minimize, maximize/restore, and close
-  through a narrow IPC bridge;
+- the custom title bar and the remote-access window only reach the main process
+  through a narrow, sender-checked IPC bridge;
 - non-local navigation opens in the system browser and the page never gets
   Node.js access;
-- quitting the single-instance app stops the Harness child process;
-- the HarmonyOS host binding to `0.0.0.0` is an explicit, reversible profile
-  patch — never the default.
+- quitting the single-instance app stops the Harness child process gracefully
+  (SIGTERM grace period, then SIGKILL).
 
 ## Upstream, icon and licenses
 

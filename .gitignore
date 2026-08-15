@@ -3,6 +3,7 @@ node_modules/
 harness/node_modules/
 harness/runtime/
 /runtime/
+.npm-cache-tmp/
 
 # Build and QA output
 dist/

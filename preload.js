@@ -2,12 +2,13 @@
 /**
  * DeepSeek Harness Desktop — preload bridge (clean-room implementation).
  *
- * Exposes a minimal, frozen window-control surface to the trusted shell page
- * (shell.html) only. The harness content view loads WITHOUT this preload.
+ * Exposes a minimal, frozen surface to the trusted local pages (shell.html and
+ * remote.html) only. The harness content view loads WITHOUT this preload.
  *
- * Contract surface (kept stable for the shell page and QA):
+ * Contract surface (kept stable for the local pages and QA):
  *   window.desktopWindow = { minimize, toggleMaximize, close, getState,
- *                            onStateChange, onPageTitle }
+ *                            onStateChange, onPageTitle, openRemote }
+ *   window.desktopRemote = { getState, setEnabled, onStateChange, copyText }
  */
 
 const { contextBridge, ipcRenderer } = require('electron')
@@ -31,4 +32,12 @@ contextBridge.exposeInMainWorld('desktopWindow', Object.freeze({
   getState: () => ipcRenderer.invoke('desktop:get-window-state'),
   onStateChange: callback => subscribe('desktop:window-state', callback),
   onPageTitle: callback => subscribe('desktop:page-title', callback),
+  openRemote: () => ipcRenderer.send('desktop:open-remote'),
+}))
+
+contextBridge.exposeInMainWorld('desktopRemote', Object.freeze({
+  getState: () => ipcRenderer.invoke('desktop:remote-get-state'),
+  setEnabled: (enabled, port) => ipcRenderer.invoke('desktop:remote-set-enabled', enabled, port),
+  onStateChange: callback => subscribe('desktop:remote-state', callback),
+  copyText: text => ipcRenderer.invoke('desktop:copy-text', text),
 }))

@@ -2,7 +2,7 @@ import { webview } from '@kit.ArkWeb';
 import { preferences } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
 
-const DEFAULT_HOST_URL: string = 'http://192.168.1.100:8080';
+const DEFAULT_HOST_URL: string = 'http://192.168.1.100:8787';
 const PREFERENCES_NAME: string = 'host_settings';
 const KEY_HOST_URL: string = 'host_url';
 
@@ -86,13 +86,13 @@ struct Index {
   build() {
     Column() {
       Column({ space: 8 }) {
-        Text('宿主地址（PC 上 dsh web 的局域网地址）')
+        Text('宿主地址（桌面端“手机远程访问”默认 8787 端口）')
           .fontSize(13)
           .fontColor('#4A5568')
           .width('100%')
 
         Row() {
-          TextInput({ text: this.inputUrl, placeholder: 'http://192.168.1.100:8080' })
+          TextInput({ text: this.inputUrl, placeholder: 'http://192.168.1.100:8787' })
             .layoutWeight(1)
             .height(44)
             .fontSize(14)

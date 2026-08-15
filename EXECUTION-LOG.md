@@ -141,3 +141,31 @@ Code Review 三条结论均已修复：
 修复后本地回归：`npm run check` 通过（新增断言全部命中），Windows
 `npm run setup` / `npm run build:dir` 待最终提交前复跑。
 
+## M11 — 借鉴 anywhere-labs：托盘常驻 + 手机远程访问（2026-08-15）
+
+- 用户决策：一步做到“局域网手机直连桌面 Harness”（托盘 + 远程开关 + 二维码 +
+  鸿蒙适配）。
+- 生命周期：托盘常驻（关窗隐藏，Host 继续运行；托盘菜单 打开/手机远程/退出）；
+  `requestAppQuit()` 串行化退出（SIGTERM 5s → SIGKILL → 释放 before-quit）；
+  macOS activate 恢复窗口；无托盘时回退“关最后窗口即退出”。QA 自定义关闭按钮
+  在 QA 环境仍走完整退出，保证 `Window controls QA passed` 语义不变。
+- 远程开关：`remote.html` 设置窗口（开关/端口/地址/复制/二维码/错误提示）；
+  标题栏新增“手机”入口；启用时在 `<userData>/harness-home/profiles/web/
+  cordis.patch.yml` 增改 `webserver`（host 0.0.0.0 + 端口，默认 8787，保留
+  其他插件条目），重启 Harness 并解析 `(LAN: http://<ip>:<port>)`；失败自动
+  回滚 loopback。关闭时移除 webserver 条目并恢复 `--port 0`。
+- 二维码：新增 pinned 依赖 `qrcode-generator@2.0.4`（零依赖，MIT），
+  `qrSvgDataUrl()` 生成 SVG data URL；files 打包 `remote.html` 与
+  `node_modules/qrcode-generator/**`；THIRD_PARTY_NOTICES 增补。
+- 安全：远程窗口 IPC 同样做 sender 校验（仅 shell/remote 两个可信页面）；
+  远程模式仍是显式用户开关，关闭即恢复 loopback。
+- HarmonyOS：默认/占位地址改 8787，输入框文案指向桌面“手机远程访问”；
+  README（中/英）与 harmonyos/README 补“方式 A 桌面开关（推荐）/方式 B CLI”。
+- verify-source 新增断言：qrcode-generator 精确锁版、remote.html 与 QR 依赖
+  打包、Tray/0.0.0.0 补丁/LAN URL 解析必须存在；`npm run check` 通过。
+- 本地回归：`npm ci --dry-run`、`npm run check`、`npm run setup`、bash -n、
+  JSON5 解析全部通过；`npm run build:dir` 成功且 asar 内含 `remote.html` 与
+  `node_modules/qrcode-generator`。GUI QA 本轮未重跑（当前会话 GUI 沙箱受限且
+  用户侧有运行中的桌面实例）；macOS 上 `scripts/verify-macos.sh` 新增了
+  `DSH_DESKTOP_QA_REMOTE` 钩子（开启→LAN 发现→关闭），待用户下次运行反馈。
+

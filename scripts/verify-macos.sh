@@ -121,6 +121,24 @@ fi
 printf '      no residual Harness process\n'
 
 # ---------------------------------------------------------------------------
+step "6b/8 QA hook 3 — phone remote access toggle (LAN enable/disable)"
+DSH_DESKTOP_QA_REMOTE=1 DSH_DESKTOP_QA_AUTO_QUIT=1 npm start
+sleep 2
+LOG="$(latest_log)"
+[[ -n "$LOG" ]] || die "desktop.log was not created"
+if grep -q "Remote access QA passed" "$LOG"; then
+  printf '      Remote access QA passed: enable, LAN discovery, disable\n'
+elif grep -q "Remote access QA skipped: dsh did not report a LAN URL" "$LOG"; then
+  printf '      Remote access QA skipped: no LAN URL reported (documented branch)\n'
+else
+  die "phone remote access QA did not pass (see $LOG)"
+fi
+if pgrep -f '@deepseek-ai/dsh/lib/bin.js' >/dev/null 2>&1; then
+  die "a bundled Harness node process is still running after remote QA"
+fi
+printf '      no residual Harness process\n'
+
+# ---------------------------------------------------------------------------
 step "7/8 Build the ad-hoc signed dmg (build.sh)"
 bash scripts/build.sh
 

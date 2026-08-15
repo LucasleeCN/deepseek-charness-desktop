@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Phone-remote mode inspired by anywhere-labs' "phone as remote control"
+  design:
+  - Tray-owned lifecycle: closing the window hides it to the tray and keeps
+    the Harness Host running; the tray menu restores the window, opens remote
+    settings, or quits; graceful SIGTERM→SIGKILL shutdown.
+  - `remote.html` remote-access window with an enable switch, port input, LAN
+    URL, copy button, and QR code (`qrcode-generator@2.0.4` pinned).
+  - Enabling writes/removes the `webserver` profile patch under
+    `<userData>/harness-home` (`host: 0.0.0.0`, default port 8787), restarts
+    the Host, parses the printed LAN URL, and rolls back on failure.
+  - HarmonyOS client defaults to the desktop remote port (8787) and documents
+    both desktop and standalone CLI host paths.
 - Review fixes (macOS build review, 2026-08):
   - Confine the Harness child process default workspace to
     `<userData>/harness-home/workspace` instead of the user's whole home

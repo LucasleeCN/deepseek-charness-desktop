@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>手机远程访问</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: Inter, "Segoe UI Variable", "Segoe UI", "Microsoft YaHei", sans-serif;
+        background: #f6f7f9;
+        color: #172033;
+      }
+
+      * { box-sizing: border-box; }
+      html, body { height: 100%; margin: 0; }
+      body { padding: 20px 22px; }
+
+      h1 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
+      .subtitle { margin: 0 0 20px; font-size: 13px; color: #667085; line-height: 1.5; }
+
+      .card {
+        border: 1px solid #d9dde6;
+        border-radius: 12px;
+        background: #ffffff;
+        padding: 14px 16px;
+        margin-bottom: 14px;
+      }
+
+      .row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .label { font-size: 14px; font-weight: 600; }
+      .hint { margin-top: 6px; font-size: 12px; color: #667085; line-height: 1.5; }
+
+      .switch {
+        appearance: none;
+        width: 46px;
+        height: 26px;
+        border-radius: 13px;
+        background: #c3cad6;
+        position: relative;
+        cursor: pointer;
+        border: none;
+        flex: 0 0 auto;
+      }
+      .switch::after {
+        content: "";
+        position: absolute;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background: #ffffff;
+        top: 3px;
+        left: 3px;
+        transition: transform 0.15s ease;
+      }
+      .switch[aria-checked="true"] { background: #4d6bfe; }
+      .switch[aria-checked="true"]::after { transform: translateX(20px); }
+      .switch:focus-visible { outline: 2px solid #4d6bfe; outline-offset: 2px; }
+      .switch:disabled { opacity: 0.6; cursor: wait; }
+
+      .port-input {
+        width: 96px;
+        height: 36px;
+        border: 1px solid #c3cad6;
+        border-radius: 8px;
+        padding: 0 10px;
+        font-size: 14px;
+        color: #172033;
+      }
+      .port-input:disabled { background: #f2f4f8; color: #98a2b3; }
+
+      .url-box {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 10px;
+      }
+      .url-value {
+        flex: 1;
+        min-width: 0;
+        height: 36px;
+        display: flex;
+        align-items: center;
+        padding: 0 10px;
+        border: 1px solid #d9dde6;
+        border-radius: 8px;
+        background: #f6f7f9;
+        font-size: 13px;
+        color: #172033;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .copy-button {
+        height: 36px;
+        padding: 0 14px;
+        border: 1px solid #4d6bfe;
+        border-radius: 8px;
+        background: #ffffff;
+        color: #4d6bfe;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      .copy-button:hover { background: #eef1ff; }
+      .copy-button:disabled { opacity: 0.5; cursor: default; }
+
+      .qr-wrap {
+        margin-top: 14px;
+        display: flex;
+        justify-content: center;
+      }
+      .qr-image {
+        width: 224px;
+        height: 224px;
+        border: 1px solid #d9dde6;
+        border-radius: 12px;
+        background: #ffffff;
+        object-fit: contain;
+      }
+
+      .status {
+        min-height: 20px;
+        font-size: 13px;
+        line-height: 1.5;
+      }
+      .status--ok { color: #147d4f; }
+      .status--busy { color: #667085; }
+      .status--error { color: #b3261e; }
+
+      .warning {
+        border: 1px solid #f5d9a8;
+        background: #fff7e8;
+        border-radius: 10px;
+        padding: 10px 12px;
+        font-size: 12px;
+        color: #7a4d00;
+        line-height: 1.6;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>手机远程访问</h1>
+    <p class="subtitle">开启后，局域网内的手机（HarmonyOS / 浏览器）可以连接这台电脑上常驻运行的 DeepSeek Harness。</p>
+
+    <section class="card">
+      <div class="row">
+        <div>
+          <label class="label" for="remoteSwitch">允许局域网访问</label>
+          <div class="hint">Host 将绑定 0.0.0.0，关闭主窗口后仍保持运行。</div>
+        </div>
+        <button id="remoteSwitch" class="switch" role="switch" aria-checked="false" aria-label="允许局域网访问"></button>
+      </div>
+
+      <div class="row" style="margin-top: 12px;">
+        <div>
+          <label class="label" for="portInput">端口</label>
+          <div class="hint">范围 1024-65535，默认 8787。</div>
+        </div>
+        <input id="portInput" class="port-input" type="number" min="1024" max="65535" value="8787" inputmode="numeric" />
+      </div>
+    </section>
+
+    <section class="card" aria-live="polite">
+      <div class="row">
+        <div class="label">手机访问地址</div>
+        <div id="statusText" class="status status--busy">未开启</div>
+      </div>
+
+      <div class="url-box">
+        <div id="urlValue" class="url-value">—</div>
+        <button id="copyButton" class="copy-button" disabled>复制地址</button>
+      </div>
+
+      <div class="qr-wrap">
+        <img id="qrImage" class="qr-image" alt="手机访问二维码" hidden />
+      </div>
+
+      <div id="errorText" class="status status--error" hidden></div>
+    </section>
+
+    <div class="warning">
+      安全提示：该模式会把本机 Harness 暴露给所在局域网，且上游 Web 服务没有 TLS 和认证。
+      只应在可信网络中使用；不用时请关闭开关，它会自动恢复为仅本机 127.0.0.1。
+    </div>
+
+    <script>
+      'use strict'
+      const remote = window.desktopRemote
+      if (!remote) throw new Error('desktopRemote bridge missing: preload did not load')
+
+      const switchEl = document.getElementById('remoteSwitch')
+      const portInput = document.getElementById('portInput')
+      const statusText = document.getElementById('statusText')
+      const urlValue = document.getElementById('urlValue')
+      const copyButton = document.getElementById('copyButton')
+      const qrImage = document.getElementById('qrImage')
+      const errorText = document.getElementById('errorText')
+
+      let current = null
+      let applying = false
+
+      function render(state) {
+        current = state
+        applying = Boolean(state.busy)
+        switchEl.setAttribute('aria-checked', state.enabled ? 'true' : 'false')
+        switchEl.disabled = applying
+        portInput.disabled = state.enabled || applying
+        portInput.value = String(state.port ?? 8787)
+
+        if (state.busy) {
+          statusText.textContent = '正在应用设置并重启 Harness…'
+          statusText.className = 'status status--busy'
+        } else if (state.error) {
+          statusText.textContent = '设置失败'
+          statusText.className = 'status status--error'
+        } else if (state.enabled && state.url) {
+          statusText.textContent = '已开启'
+          statusText.className = 'status status--ok'
+        } else if (state.enabled) {
+          statusText.textContent = '已开启，等待局域网地址…'
+          statusText.className = 'status status--busy'
+        } else {
+          statusText.textContent = '未开启'
+          statusText.className = 'status status--busy'
+        }
+
+        const url = state.url ?? ''
+        urlValue.textContent = url || '—'
+        copyButton.disabled = !url || applying
+        if (state.qrDataUrl) {
+          qrImage.src = state.qrDataUrl
+          qrImage.hidden = false
+        } else {
+          qrImage.removeAttribute('src')
+          qrImage.hidden = true
+        }
+
+        errorText.textContent = state.error || ''
+        errorText.hidden = !state.error
+      }
+
+      switchEl.addEventListener('click', async () => {
+        if (applying) return
+        const targetEnabled = !current.enabled
+        const port = Number(portInput.value)
+        try {
+          const next = await remote.setEnabled(targetEnabled, port)
+          render(next)
+        } catch (error) {
+          render({ ...current, error: error?.message || String(error), busy: false })
+        }
+      })
+
+      copyButton.addEventListener('click', async () => {
+        if (!current || !current.url) return
+        await remote.copyText(current.url)
+        const original = copyButton.textContent
+        copyButton.textContent = '已复制'
+        setTimeout(() => { copyButton.textContent = original }, 1200)
+      })
+
+      remote.onStateChange(render)
+      void remote.getState().then(render).catch(error => {
+        render({ enabled: false, port: 8787, url: null, qrDataUrl: null, busy: false, error: error?.message || String(error) })
+      })
+    </script>
+  </body>
+</html>
