@@ -1,88 +1,112 @@
 'use strict'
+/**
+ * DeepSeek Harness Desktop — main process (clean-room implementation).
+ *
+ * This file is original code written for this project. It implements the same
+ * documented behaviour contract as the upstream reference shell (frameless
+ * window + sandboxed WebContentsView, bundled-harness spawn with URL-line
+ * discovery, navigation allow-list, window-control IPC, QA hooks) but with an
+ * independent internal design.
+ *
+ * Behaviour contract (kept stable so QA and packaging acceptance stay valid):
+ *   - 42px custom title bar in a frameless BrowserWindow; official UI is
+ *     attached as a sandboxed WebContentsView below it.
+ *   - The bundled Node runtime spawns `@deepseek-ai/dsh web --port 0` with
+ *     DSH_HOME=<userData>/harness-home; the loopback URL is parsed from
+ *     stdout/stderr within a 90s budget.
+ *   - Navigation is confined to the harness origin; external http(s) URLs go
+ *     to the system browser; new windows / webviews are refused.
+ *   - IPC: `desktop:window-control` (minimize | toggle-maximize | close),
+ *     `desktop:get-window-state`, events `desktop:window-state` and
+ *     `desktop:page-title`; every handler verifies the sender.
+ *   - QA hooks: DSH_DESKTOP_QA_SCREENSHOT, DSH_DESKTOP_QA_WINDOW_CONTROLS=1,
+ *     DSH_DESKTOP_QA_AUTO_QUIT=1.
+ *   - Logs append to <userData>/logs/desktop.log.
+ */
 
-const {
-  app,
-  BrowserWindow,
-  WebContentsView,
-  Menu,
-  ipcMain,
-  dialog,
-  shell,
-  desktopCapturer,
-} = require('electron')
+const { app, BrowserWindow, WebContentsView, Menu, ipcMain, dialog, shell, desktopCapturer } = require('electron')
 const { spawn } = require('node:child_process')
 const fs = require('node:fs')
 const path = require('node:path')
 
 const PRODUCT_NAME = 'DeepSeek Harness Desktop'
 const TITLE_BAR_HEIGHT = 42
-const STARTUP_TIMEOUT_MS = 90_000
+const HARNESS_START_TIMEOUT_MS = 90_000
+const URL_LINE_PATTERN = /https?:\/\/(?:127\.0\.0\.1|localhost):\d+/i
 
-let mainWindow
-let harnessView
-let harnessProcess
-let harnessOrigin
-let startupTimer
-let quitting = false
+// ---------------------------------------------------------------------------
+// Runtime state
+// ---------------------------------------------------------------------------
 
-function dataPath(...parts) {
-  return path.join(app.getPath('userData'), ...parts)
+const state = {
+  window: null,       // BrowserWindow (the shell)
+  view: null,         // WebContentsView (harness UI)
+  harness: null,      // HarnessProcess handle
+  harnessOrigin: null, // parsed origin of the running harness
+  startupTimer: null,
+  quitting: false,
 }
 
-function writeLog(message) {
+// ---------------------------------------------------------------------------
+// Logging
+// ---------------------------------------------------------------------------
+
+function dataPath(...segments) {
+  return path.join(app.getPath('userData'), ...segments)
+}
+
+function appendLog(message) {
   try {
-    const logDirectory = dataPath('logs')
-    fs.mkdirSync(logDirectory, { recursive: true })
-    fs.appendFileSync(
-      path.join(logDirectory, 'desktop.log'),
-      `${new Date().toISOString()} ${message}\n`,
-      'utf8',
-    )
+    const dir = dataPath('logs')
+    fs.mkdirSync(dir, { recursive: true })
+    fs.appendFileSync(path.join(dir, 'desktop.log'), `${new Date().toISOString()} ${message}\n`, 'utf8')
   } catch {
-    // Logging must never prevent the desktop shell from starting.
+    // Logging must never prevent startup.
   }
 }
 
-function harnessRuntimeRoot() {
-  return app.isPackaged
-    ? path.join(process.resourcesPath, 'harness')
-    : path.join(__dirname, 'harness')
-}
+// ---------------------------------------------------------------------------
+// Bundled harness management
+// ---------------------------------------------------------------------------
 
-function harnessCliPath() {
-  return path.join(
-    harnessRuntimeRoot(),
-    'node_modules',
-    '@deepseek-ai',
-    'dsh',
-    'lib',
-    'bin.js',
-  )
-}
+/**
+ * Owns the bundled `@deepseek-ai/dsh` child process: locate, spawn, discover
+ * the loopback URL, and stop.
+ */
+class HarnessProcess {
+  constructor() {
+    this.child = null
+    this.runtimeDir = null
+  }
 
-function harnessNodePath() {
-  return path.join(harnessRuntimeRoot(), 'runtime', 'node.exe')
-}
+  runtimeRoot() {
+    // Packaged builds carry harness under resources; dev runs use the repo copy.
+    return app.isPackaged
+      ? path.join(process.resourcesPath, 'harness')
+      : path.join(__dirname, 'harness')
+  }
 
-function startHarness() {
-  return new Promise((resolve, reject) => {
-    const cliPath = harnessCliPath()
+  locate() {
+    this.runtimeDir = this.runtimeRoot()
+    const cliPath = path.join(this.runtimeDir, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
+    const nodePath = path.join(this.runtimeDir, 'runtime', 'node.exe')
     if (!fs.existsSync(cliPath)) {
-      reject(new Error(`Bundled Harness CLI was not found: ${cliPath}`))
-      return
+      throw new Error(`Bundled Harness CLI was not found: ${cliPath}`)
     }
-
-    const nodePath = harnessNodePath()
     if (!fs.existsSync(nodePath)) {
-      reject(new Error(`Bundled Node.js runtime was not found: ${nodePath}`))
-      return
+      throw new Error(`Bundled Node.js runtime was not found: ${nodePath}`)
     }
+    return { cliPath, nodePath }
+  }
 
+  async start() {
+    const { cliPath, nodePath } = this.locate()
     const harnessHome = dataPath('harness-home')
     fs.mkdirSync(harnessHome, { recursive: true })
 
-    writeLog(`Starting Harness from ${cliPath} with ${nodePath}`)
-    harnessProcess = spawn(nodePath, [cliPath, 'web', '--port', '0'], {
+    appendLog(`Starting Harness from ${cliPath} with ${nodePath}`)
+
+    this.child = spawn(nodePath, [cliPath, 'web', '--port', '0'], {
       cwd: app.getPath('home'),
       env: {
         ...process.env,
@@ -94,101 +118,109 @@ function startHarness() {
       windowsHide: true,
     })
 
-    let settled = false
-    const finish = (error, url) => {
-      if (settled) return
-      settled = true
-      clearTimeout(startupTimer)
-      if (error) reject(error)
-      else resolve(url)
-    }
+    return this.discoverUrl()
+  }
 
-    const inspectOutput = (source, chunk) => {
-      const output = chunk
-        .toString('utf8')
-        .replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, '')
-
-      for (const line of output.split(/\r?\n/)) {
-        if (line.trim()) writeLog(`[dsh:${source}] ${line}`)
+  /** Resolve the harness URL from output lines, bounded by the startup budget. */
+  discoverUrl() {
+    return new Promise((resolve, reject) => {
+      let settled = false
+      const finish = (error, url) => {
+        if (settled) return
+        settled = true
+        clearTimeout(state.startupTimer)
+        state.startupTimer = null
+        if (error) reject(error)
+        else resolve(url)
       }
 
-      const match = output.match(/https?:\/\/(?:127\.0\.0\.1|localhost):\d+/i)
-      if (match) {
-        harnessOrigin = new URL(match[0]).origin
-        finish(undefined, match[0])
+      const onChunk = (source, chunk) => {
+        // Strip ANSI escapes before scanning (dsh may colourise its output).
+        const text = chunk.toString('utf8').replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, '')
+        for (const line of text.split(/\r?\n/)) {
+          if (line.trim()) appendLog(`[dsh:${source}] ${line}`)
+        }
+        const hit = text.match(URL_LINE_PATTERN)
+        if (hit) {
+          state.harnessOrigin = new URL(hit[0]).origin
+          finish(undefined, hit[0])
+        }
       }
-    }
 
-    harnessProcess.stdout.on('data', chunk => inspectOutput('out', chunk))
-    harnessProcess.stderr.on('data', chunk => inspectOutput('err', chunk))
+      this.child.stdout.on('data', chunk => onChunk('out', chunk))
+      this.child.stderr.on('data', chunk => onChunk('err', chunk))
 
-    harnessProcess.once('error', error => {
-      writeLog(`[dsh:error] ${error.stack || error.message}`)
-      finish(error)
+      this.child.once('error', error => {
+        appendLog(`[dsh:error] ${error.stack || error.message}`)
+        finish(error)
+      })
+
+      this.child.once('exit', (code, signal) => {
+        appendLog(`[dsh:exit] code=${code} signal=${signal}`)
+        this.child = null
+        if (!settled) {
+          finish(new Error(`Harness exited during startup (code=${code}, signal=${signal})`))
+        } else if (!state.quitting && state.window && !state.window.isDestroyed()) {
+          void dialog.showMessageBox(state.window, {
+            type: 'error',
+            title: 'Harness service stopped',
+            message: 'The DeepSeek Harness background service exited unexpectedly.',
+            detail: `Exit code: ${code ?? 'unknown'}\nLogs: ${dataPath('logs')}`,
+          })
+        }
+      })
+
+      state.startupTimer = setTimeout(() => {
+        finish(new Error(`Harness startup exceeded ${HARNESS_START_TIMEOUT_MS / 1000} seconds.`))
+      }, HARNESS_START_TIMEOUT_MS)
     })
+  }
 
-    harnessProcess.once('exit', (code, signal) => {
-      writeLog(`[dsh:exit] code=${code} signal=${signal}`)
-      harnessProcess = undefined
-
-      if (!settled) {
-        finish(new Error(`Harness exited during startup (code=${code}, signal=${signal})`))
-      } else if (!quitting && mainWindow && !mainWindow.isDestroyed()) {
-        void dialog.showMessageBox(mainWindow, {
-          type: 'error',
-          title: 'Harness service stopped',
-          message: 'The DeepSeek Harness background service exited unexpectedly.',
-          detail: `Exit code: ${code ?? 'unknown'}\nLogs: ${dataPath('logs')}`,
-        })
-      }
-    })
-
-    startupTimer = setTimeout(() => {
-      finish(new Error(`Harness startup exceeded ${STARTUP_TIMEOUT_MS / 1000} seconds.`))
-    }, STARTUP_TIMEOUT_MS)
-  })
-}
-
-function stopHarness() {
-  clearTimeout(startupTimer)
-  if (!harnessProcess || harnessProcess.killed) return
-
-  writeLog(`[desktop] Stopping Harness pid=${harnessProcess.pid}`)
-  try {
-    harnessProcess.kill()
-  } catch (error) {
-    writeLog(`[desktop] Failed to stop Harness: ${error.message}`)
+  stop() {
+    clearTimeout(state.startupTimer)
+    state.startupTimer = null
+    if (!this.child || this.child.killed) return
+    appendLog(`[desktop] Stopping Harness pid=${this.child.pid}`)
+    try {
+      this.child.kill()
+    } catch (error) {
+      appendLog(`[desktop] Failed to stop Harness: ${error.message}`)
+    }
   }
 }
 
+// ---------------------------------------------------------------------------
+// Navigation guard
+// ---------------------------------------------------------------------------
+
 function isHarnessUrl(rawUrl) {
-  if (!harnessOrigin) return false
+  if (!state.harnessOrigin) return false
   try {
-    return new URL(rawUrl).origin === harnessOrigin
+    return new URL(rawUrl).origin === state.harnessOrigin
   } catch {
     return false
   }
 }
 
-function openExternalUrl(rawUrl) {
+function routeExternalUrl(rawUrl) {
   try {
-    const url = new URL(rawUrl)
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-      writeLog(`[desktop] Blocked external protocol: ${url.protocol}`)
+    const parsed = new URL(rawUrl)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      appendLog(`[desktop] Blocked external protocol: ${parsed.protocol}`)
       return
     }
-    void shell.openExternal(url.toString())
+    void shell.openExternal(parsed.toString())
   } catch {
-    writeLog('[desktop] Blocked malformed external URL.')
+    appendLog('[desktop] Blocked malformed external URL.')
   }
 }
 
-function configureHarnessNavigation(webContents) {
+function guardNavigation(webContents) {
   webContents.setWindowOpenHandler(({ url }) => {
     if (isHarnessUrl(url)) {
       void webContents.loadURL(url)
     } else {
-      openExternalUrl(url)
+      routeExternalUrl(url)
     }
     return { action: 'deny' }
   })
@@ -196,55 +228,28 @@ function configureHarnessNavigation(webContents) {
   webContents.on('will-navigate', (event, url) => {
     if (isHarnessUrl(url)) return
     event.preventDefault()
-    openExternalUrl(url)
+    routeExternalUrl(url)
   })
 
   webContents.on('will-attach-webview', event => event.preventDefault())
 }
 
-function sendWindowState() {
-  if (!mainWindow || mainWindow.isDestroyed()) return
-  mainWindow.webContents.send('desktop:window-state', {
-    maximized: mainWindow.isMaximized(),
-    fullScreen: mainWindow.isFullScreen(),
+// ---------------------------------------------------------------------------
+// Window construction
+// ---------------------------------------------------------------------------
+
+function pushWindowState() {
+  if (!state.window || state.window.isDestroyed()) return
+  state.window.webContents.send('desktop:window-state', {
+    maximized: state.window.isMaximized(),
+    fullScreen: state.window.isFullScreen(),
   })
 }
 
-function setupWindowControlIpc() {
-  ipcMain.on('desktop:window-control', (event, action) => {
-    if (!mainWindow || mainWindow.isDestroyed()) return
-    if (event.sender !== mainWindow.webContents) return
-
-    switch (action) {
-      case 'minimize':
-        mainWindow.minimize()
-        break
-      case 'toggle-maximize':
-        if (mainWindow.isMaximized()) mainWindow.unmaximize()
-        else mainWindow.maximize()
-        break
-      case 'close':
-        mainWindow.close()
-        break
-      default:
-        break
-    }
-  })
-
-  ipcMain.handle('desktop:get-window-state', event => {
-    if (!mainWindow || mainWindow.isDestroyed()) return { maximized: false, fullScreen: false }
-    if (event.sender !== mainWindow.webContents) return { maximized: false, fullScreen: false }
-    return {
-      maximized: mainWindow.isMaximized(),
-      fullScreen: mainWindow.isFullScreen(),
-    }
-  })
-}
-
-function layoutHarnessView() {
-  if (!mainWindow || mainWindow.isDestroyed() || !harnessView) return
-  const [width, height] = mainWindow.getContentSize()
-  harnessView.setBounds({
+function layoutContentView() {
+  if (!state.window || state.window.isDestroyed() || !state.view) return
+  const [width, height] = state.window.getContentSize()
+  state.view.setBounds({
     x: 0,
     y: TITLE_BAR_HEIGHT,
     width: Math.max(0, width),
@@ -252,8 +257,8 @@ function layoutHarnessView() {
   })
 }
 
-async function attachHarnessView(url) {
-  harnessView = new WebContentsView({
+async function attachContentView(url) {
+  state.view = new WebContentsView({
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -261,114 +266,30 @@ async function attachHarnessView(url) {
     },
   })
 
-  if (typeof harnessView.setBackgroundColor === 'function') {
-    harnessView.setBackgroundColor('#ffffff')
+  if (typeof state.view.setBackgroundColor === 'function') {
+    state.view.setBackgroundColor('#ffffff')
   }
 
-  mainWindow.contentView.addChildView(harnessView)
-  layoutHarnessView()
-  configureHarnessNavigation(harnessView.webContents)
+  state.window.contentView.addChildView(state.view)
+  layoutContentView()
+  guardNavigation(state.view.webContents)
 
-  harnessView.webContents.on('page-title-updated', (event, title) => {
+  state.view.webContents.on('page-title-updated', (event, title) => {
     event.preventDefault()
-    const nextTitle = title?.trim() || 'DeepSeek Harness'
-    mainWindow?.setTitle(nextTitle)
-    mainWindow?.webContents.send('desktop:page-title', nextTitle)
+    const nextTitle = title?.trim() || PRODUCT_NAME
+    state.window?.setTitle(nextTitle)
+    state.window?.webContents.send('desktop:page-title', nextTitle)
   })
 
-  harnessView.webContents.on('render-process-gone', (_event, details) => {
-    writeLog(`[desktop] Harness renderer gone: ${JSON.stringify(details)}`)
+  state.view.webContents.on('render-process-gone', (_event, details) => {
+    appendLog(`[desktop] Harness renderer gone: ${JSON.stringify(details)}`)
   })
 
-  await harnessView.webContents.loadURL(url)
-}
-
-async function captureComposedWindow(filename) {
-  await new Promise(resolve => setTimeout(resolve, 2_000))
-  const screenshotPath = path.resolve(filename)
-  fs.mkdirSync(path.dirname(screenshotPath), { recursive: true })
-
-  const bounds = mainWindow.getBounds()
-  const sources = await desktopCapturer.getSources({
-    types: ['window'],
-    thumbnailSize: {
-      width: Math.max(1, bounds.width),
-      height: Math.max(1, bounds.height),
-    },
-    fetchWindowIcons: false,
-  })
-
-  const source = sources.find(item => item.name === mainWindow.getTitle())
-    ?? sources.find(item => /DeepSeek Harness/i.test(item.name))
-
-  if (!source || source.thumbnail.isEmpty()) {
-    throw new Error('The composed Electron window was not available to desktopCapturer.')
-  }
-
-  fs.writeFileSync(screenshotPath, source.thumbnail.toPNG())
-  writeLog(`[desktop] QA screenshot saved to ${screenshotPath}`)
-}
-
-function waitForWindowState(predicate, description, timeoutMs = 5_000) {
-  const startedAt = Date.now()
-
-  return new Promise((resolve, reject) => {
-    const check = () => {
-      if (!mainWindow || mainWindow.isDestroyed()) {
-        reject(new Error(`Window was destroyed while waiting for ${description}.`))
-        return
-      }
-
-      if (predicate(mainWindow)) {
-        resolve()
-        return
-      }
-
-      if (Date.now() - startedAt >= timeoutMs) {
-        reject(new Error(`Timed out waiting for ${description}.`))
-        return
-      }
-
-      setTimeout(check, 50)
-    }
-
-    check()
-  })
-}
-
-async function clickTitleBarButton(buttonId) {
-  const clicked = await mainWindow.webContents.executeJavaScript(`(() => {
-    const button = document.getElementById(${JSON.stringify(buttonId)})
-    if (!button) return false
-    button.click()
-    return true
-  })()`)
-
-  if (!clicked) throw new Error(`Title-bar button was not found: ${buttonId}`)
-}
-
-async function exerciseWindowControls() {
-  if (mainWindow.isMaximized()) mainWindow.unmaximize()
-  if (mainWindow.isMinimized()) mainWindow.restore()
-
-  await clickTitleBarButton('maximize')
-  await waitForWindowState(window => window.isMaximized(), 'the custom maximize action')
-
-  await clickTitleBarButton('maximize')
-  await waitForWindowState(window => !window.isMaximized(), 'the custom restore action')
-
-  await clickTitleBarButton('minimize')
-  await waitForWindowState(window => window.isMinimized(), 'the custom minimize action')
-
-  mainWindow.restore()
-  mainWindow.show()
-  await waitForWindowState(window => !window.isMinimized(), 'the restored test window')
-
-  writeLog('[desktop] Window controls QA passed: maximize, restore, minimize')
+  await state.view.webContents.loadURL(url)
 }
 
 async function createWindow() {
-  mainWindow = new BrowserWindow({
+  state.window = new BrowserWindow({
     title: PRODUCT_NAME,
     width: 1440,
     height: 920,
@@ -394,57 +315,45 @@ async function createWindow() {
     },
   })
 
-  mainWindow.removeMenu()
-  mainWindow.setMenuBarVisibility(false)
-  mainWindow.on('resize', layoutHarnessView)
-  mainWindow.on('maximize', sendWindowState)
-  mainWindow.on('unmaximize', sendWindowState)
-  mainWindow.on('enter-full-screen', sendWindowState)
-  mainWindow.on('leave-full-screen', sendWindowState)
-  mainWindow.on('closed', () => {
-    harnessView = undefined
-    mainWindow = undefined
-  })
+  state.window.removeMenu()
+  state.window.setMenuBarVisibility(false)
 
-  mainWindow.once('ready-to-show', () => mainWindow?.show())
-  await mainWindow.loadFile(path.join(__dirname, 'shell.html'))
-  sendWindowState()
+  state.window.on('resize', layoutContentView)
+  for (const eventName of ['maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen']) {
+    state.window.on(eventName, pushWindowState)
+  }
+  state.window.on('closed', () => {
+    state.view = null
+    state.window = null
+  })
+  state.window.once('ready-to-show', () => state.window?.show())
+
+  await state.window.loadFile(path.join(__dirname, 'shell.html'))
+  pushWindowState()
 
   try {
-    const url = await startHarness()
-    writeLog(`[desktop] Loading ${url}`)
-    await attachHarnessView(url)
+    state.harness = new HarnessProcess()
+    const url = await state.harness.start()
+    appendLog(`[desktop] Loading ${url}`)
+    await attachContentView(url)
 
-    const rendererState = await harnessView.webContents.executeJavaScript(`({
+    // Readiness probe: used by CI and by the QA hooks below.
+    const probe = await state.view.webContents.executeJavaScript(`({
       title: document.title,
       readyState: document.readyState,
       bodyTextLength: document.body?.innerText?.length ?? 0,
     })`)
-    writeLog(`[desktop] Renderer ready ${JSON.stringify(rendererState)}`)
+    appendLog(`[desktop] Renderer ready ${JSON.stringify(probe)}`)
 
-    const qaScreenshot = process.env.DSH_DESKTOP_QA_SCREENSHOT
-    if (qaScreenshot) await captureComposedWindow(qaScreenshot)
+    const screenshotTarget = process.env.DSH_DESKTOP_QA_SCREENSHOT
+    if (screenshotTarget) await captureScreenshot(screenshotTarget)
 
-    const qaWindowControls = process.env.DSH_DESKTOP_QA_WINDOW_CONTROLS === '1'
-    if (qaWindowControls) await exerciseWindowControls()
+    if (process.env.DSH_DESKTOP_QA_WINDOW_CONTROLS === '1') await exerciseWindowControls()
 
-    if (process.env.DSH_DESKTOP_QA_AUTO_QUIT === '1') {
-      if (qaWindowControls) {
-        writeLog('[desktop] Testing the custom close action')
-        setTimeout(() => {
-          if (!mainWindow || mainWindow.isDestroyed()) return
-          void clickTitleBarButton('close').catch(error => {
-            writeLog(`[desktop:error] Custom close QA failed: ${error.message}`)
-            app.quit()
-          })
-        }, 250)
-      } else {
-        setTimeout(() => app.quit(), 250)
-      }
-    }
+    if (process.env.DSH_DESKTOP_QA_AUTO_QUIT === '1') scheduleAutoQuit()
   } catch (error) {
-    writeLog(`[desktop:error] ${error.stack || error.message}`)
-    await dialog.showMessageBox(mainWindow, {
+    appendLog(`[desktop:error] ${error.stack || error.message}`)
+    await dialog.showMessageBox(state.window, {
       type: 'error',
       title: 'Startup failed',
       message: 'DeepSeek Harness could not be started.',
@@ -454,17 +363,154 @@ async function createWindow() {
   }
 }
 
-setupWindowControlIpc()
+// ---------------------------------------------------------------------------
+// QA hooks
+// ---------------------------------------------------------------------------
 
-const gotLock = app.requestSingleInstanceLock()
-if (!gotLock) {
+/** Capture the composed window (title bar + harness view) to a PNG. */
+async function captureScreenshot(filename) {
+  await new Promise(resolve => setTimeout(resolve, 2_000))
+  const target = path.resolve(filename)
+  fs.mkdirSync(path.dirname(target), { recursive: true })
+
+  const bounds = state.window.getBounds()
+  const sources = await desktopCapturer.getSources({
+    types: ['window'],
+    thumbnailSize: {
+      width: Math.max(1, bounds.width),
+      height: Math.max(1, bounds.height),
+    },
+    fetchWindowIcons: false,
+  })
+
+  const source = sources.find(item => item.name === state.window.getTitle())
+    ?? sources.find(item => /DeepSeek Harness/i.test(item.name))
+
+  if (!source || source.thumbnail.isEmpty()) {
+    throw new Error('The composed Electron window was not available to desktopCapturer.')
+  }
+
+  fs.writeFileSync(target, source.thumbnail.toPNG())
+  appendLog(`[desktop] QA screenshot saved to ${target}`)
+}
+
+function waitForWindow(predicate, description, timeoutMs = 5_000) {
+  const startedAt = Date.now()
+  return new Promise((resolve, reject) => {
+    const poll = () => {
+      if (!state.window || state.window.isDestroyed()) {
+        reject(new Error(`Window was destroyed while waiting for ${description}.`))
+        return
+      }
+      if (predicate(state.window)) {
+        resolve()
+        return
+      }
+      if (Date.now() - startedAt >= timeoutMs) {
+        reject(new Error(`Timed out waiting for ${description}.`))
+        return
+      }
+      setTimeout(poll, 50)
+    }
+    poll()
+  })
+}
+
+async function clickShellButton(buttonId) {
+  const clicked = await state.window.webContents.executeJavaScript(`(() => {
+    const el = document.getElementById(${JSON.stringify(buttonId)})
+    if (!el) return false
+    el.click()
+    return true
+  })()`)
+  if (!clicked) throw new Error(`Title-bar button was not found: ${buttonId}`)
+}
+
+async function exerciseWindowControls() {
+  if (state.window.isMaximized()) state.window.unmaximize()
+  if (state.window.isMinimized()) state.window.restore()
+
+  await clickShellButton('maximize')
+  await waitForWindow(w => w.isMaximized(), 'the custom maximize action')
+
+  await clickShellButton('maximize')
+  await waitForWindow(w => !w.isMaximized(), 'the custom restore action')
+
+  await clickShellButton('minimize')
+  await waitForWindow(w => w.isMinimized(), 'the custom minimize action')
+
+  state.window.restore()
+  state.window.show()
+  await waitForWindow(w => !w.isMinimized(), 'the restored test window')
+
+  appendLog('[desktop] Window controls QA passed: maximize, restore, minimize')
+}
+
+function scheduleAutoQuit() {
+  const controlsWereExercised = process.env.DSH_DESKTOP_QA_WINDOW_CONTROLS === '1'
+  if (controlsWereExercised) {
+    appendLog('[desktop] Testing the custom close action')
+    setTimeout(() => {
+      if (!state.window || state.window.isDestroyed()) return
+      void clickShellButton('close').catch(error => {
+        appendLog(`[desktop:error] Custom close QA failed: ${error.message}`)
+        app.quit()
+      })
+    }, 250)
+  } else {
+    setTimeout(() => app.quit(), 250)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// IPC
+// ---------------------------------------------------------------------------
+
+function registerWindowIpc() {
+  ipcMain.on('desktop:window-control', (event, action) => {
+    if (!state.window || state.window.isDestroyed()) return
+    if (event.sender !== state.window.webContents) return
+    switch (action) {
+      case 'minimize':
+        state.window.minimize()
+        break
+      case 'toggle-maximize':
+        if (state.window.isMaximized()) state.window.unmaximize()
+        else state.window.maximize()
+        break
+      case 'close':
+        state.window.close()
+        break
+      default:
+        break
+    }
+  })
+
+  ipcMain.handle('desktop:get-window-state', event => {
+    if (!state.window || state.window.isDestroyed()) return { maximized: false, fullScreen: false }
+    if (event.sender !== state.window.webContents) return { maximized: false, fullScreen: false }
+    return {
+      maximized: state.window.isMaximized(),
+      fullScreen: state.window.isFullScreen(),
+    }
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Lifecycle
+// ---------------------------------------------------------------------------
+
+registerWindowIpc()
+
+const gotSingleInstanceLock = app.requestSingleInstanceLock()
+if (!gotSingleInstanceLock) {
   app.quit()
 } else {
   app.on('second-instance', () => {
-    if (!mainWindow) return
-    if (mainWindow.isMinimized()) mainWindow.restore()
-    mainWindow.show()
-    mainWindow.focus()
+    if (!state.window) return
+    if (state.window.isMinimized()) state.window.restore()
+    state.window.show()
+    state.window.focus()
   })
 
   app.whenReady().then(() => {
@@ -473,15 +519,15 @@ if (!gotLock) {
     Menu.setApplicationMenu(null)
     return createWindow()
   }).catch(error => {
-    writeLog(`[desktop:fatal] ${error.stack || error.message}`)
+    appendLog(`[desktop:fatal] ${error.stack || error.message}`)
     dialog.showErrorBox('Startup failed', error.message)
     app.quit()
   })
 }
 
 app.on('before-quit', () => {
-  quitting = true
-  stopHarness()
+  state.quitting = true
+  state.harness?.stop()
 })
 
 app.on('window-all-closed', () => app.quit())

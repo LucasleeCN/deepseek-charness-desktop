@@ -13,242 +13,125 @@
       }
 
       * { box-sizing: border-box; }
+      html, body { height: 100%; margin: 0; overflow: hidden; }
 
-      html,
-      body {
-        width: 100%;
-        height: 100%;
-        margin: 0;
-        overflow: hidden;
-        user-select: none;
-      }
-
-      body {
-        background:
-          radial-gradient(circle at 26% 32%, rgba(80, 124, 255, 0.12), transparent 34%),
-          radial-gradient(circle at 76% 72%, rgba(33, 192, 164, 0.1), transparent 28%),
-          #f6f7f9;
-      }
-
+      /* ---- custom title bar (42px) ---- */
       .titlebar {
-        position: relative;
-        z-index: 10;
-        height: 42px;
-        display: flex;
-        align-items: stretch;
-        border-bottom: 1px solid #e4e7ec;
-        background: rgba(251, 252, 253, 0.96);
-        box-shadow: 0 1px 0 rgba(20, 31, 50, 0.02);
-        -webkit-app-region: drag;
-      }
-
-      .identity {
-        min-width: 0;
-        padding: 0 14px;
         display: flex;
         align-items: center;
-        gap: 9px;
-      }
-
-      .app-mark {
-        width: 22px;
-        height: 22px;
-        flex: none;
-      }
-
-      .app-mark img {
-        display: block;
-        width: 100%;
-        height: 100%;
-        object-fit: contain;
-      }
-
-      .title {
-        max-width: min(520px, 45vw);
-        overflow: hidden;
-        color: #253047;
-        font-size: 12.5px;
-        font-weight: 600;
-        line-height: 1;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-
-      .edition {
-        padding: 3px 5px 2px;
-        border: 1px solid #d9dee7;
-        border-radius: 4px;
-        color: #7a8497;
-        font-size: 8px;
-        font-weight: 700;
-        letter-spacing: 0.08em;
-        line-height: 1;
-      }
-
-      .drag-space { flex: 1; }
-
-      .window-controls {
         height: 42px;
+        padding-left: 14px;
+        background: #eef0f4;
+        border-bottom: 1px solid #d9dde6;
+        user-select: none;
+        -webkit-app-region: drag;
+      }
+      .titlebar__label {
+        flex: 1;
+        min-width: 0;
+        font-size: 12.5px;
+        color: #4a5568;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .titlebar__controls {
         display: flex;
+        height: 100%;
         -webkit-app-region: no-drag;
       }
-
-      .window-button {
+      .titlebar__button {
         width: 46px;
-        height: 42px;
-        padding: 0;
-        display: grid;
-        place-items: center;
-        border: 0;
-        outline: 0;
-        background: transparent;
-        color: #354054;
-      }
-
-      .window-button:hover { background: #e9ecf1; }
-      .window-button:active { background: #dfe3e9; }
-      .window-button:focus-visible { box-shadow: inset 0 0 0 2px #7092f4; }
-
-      .window-button.close:hover {
-        background: #e81123;
-        color: white;
-      }
-
-      .window-button.close:active { background: #c50f1f; }
-
-      .window-button svg {
-        width: 11px;
-        height: 11px;
-        overflow: visible;
-        fill: none;
-        stroke: currentColor;
-        stroke-linecap: square;
-        stroke-width: 1.2;
-      }
-
-      .restore-icon { display: none; }
-      body.maximized .maximize-icon { display: none; }
-      body.maximized .restore-icon { display: block; }
-
-      .loading-stage {
-        height: calc(100% - 42px);
-        display: grid;
-        place-items: center;
-      }
-
-      .loading-card {
-        width: min(440px, calc(100vw - 64px));
-        padding: 34px 38px;
-        border: 1px solid rgba(40, 55, 80, 0.1);
-        border-radius: 20px;
-        background: rgba(255, 255, 255, 0.82);
-        box-shadow: 0 24px 70px rgba(42, 58, 87, 0.11);
-        backdrop-filter: blur(16px);
-      }
-
-      .loading-card h1 {
-        margin: 0 0 9px;
-        font-size: 20px;
-        font-weight: 650;
-        letter-spacing: -0.02em;
-      }
-
-      .loading-card p {
-        margin: 0;
-        color: #7a8495;
-        font-size: 13px;
-        line-height: 1.65;
-      }
-
-      .progress {
-        height: 3px;
-        margin-top: 24px;
-        overflow: hidden;
-        border-radius: 999px;
-        background: #e9edf3;
-      }
-
-      .progress::after {
-        content: "";
-        display: block;
-        width: 38%;
         height: 100%;
-        border-radius: inherit;
-        background: linear-gradient(90deg, #557df1, #2ac0aa);
-        animation: travel 1.3s ease-in-out infinite;
+        border: none;
+        background: transparent;
+        font-size: 13px;
+        line-height: 1;
+        color: #4a5568;
+        cursor: default;
       }
+      .titlebar__button:hover { background: #dde1e9; }
+      .titlebar__button--close:hover { background: #e81123; color: #ffffff; }
 
-      @keyframes travel {
-        from { transform: translateX(-110%); }
-        to { transform: translateX(370%); }
+      /* ---- startup view ---- */
+      .startup {
+        position: absolute;
+        inset: 42px 0 0 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        background: #f6f7f9;
+        color: #172033;
       }
+      .startup__spinner {
+        width: 34px;
+        height: 34px;
+        border: 3px solid #d9dde6;
+        border-top-color: #4d6bfe;
+        border-radius: 50%;
+        animation: spin 0.9s linear infinite;
+      }
+      .startup__text { font-size: 14px; color: #4a5568; }
+      @keyframes spin { to { transform: rotate(360deg); } }
+
+      .hidden { display: none !important; }
     </style>
   </head>
   <body>
-    <header class="titlebar" id="titlebar">
-      <div class="identity">
-        <div class="app-mark" aria-hidden="true">
-          <img src="build/deepseek-harness.svg" alt="" />
-        </div>
-        <div class="title" id="page-title">DeepSeek Harness</div>
-        <span class="edition">DESKTOP</span>
-      </div>
-      <div class="drag-space"></div>
-      <div class="window-controls" aria-label="窗口控制">
-        <button class="window-button" id="minimize" type="button" title="最小化" aria-label="最小化">
-          <svg viewBox="0 0 12 12"><path d="M1.5 6.5h9" /></svg>
-        </button>
-        <button class="window-button" id="maximize" type="button" title="最大化" aria-label="最大化">
-          <svg class="maximize-icon" viewBox="0 0 12 12"><rect x="1.5" y="1.5" width="9" height="9" /></svg>
-          <svg class="restore-icon" viewBox="0 0 12 12"><path d="M3.5 3.5V1.5h7v7h-2M1.5 3.5h7v7h-7z" /></svg>
-        </button>
-        <button class="window-button close" id="close" type="button" title="关闭" aria-label="关闭">
-          <svg viewBox="0 0 12 12"><path d="m2 2 8 8M10 2 2 10" /></svg>
-        </button>
+    <!-- Trusted shell chrome: the official UI is attached as a separate
+         sandboxed WebContentsView below this 42px bar. -->
+    <header class="titlebar">
+      <span class="titlebar__label" id="pageTitle">正在准备本地服务…</span>
+      <div class="titlebar__controls">
+        <button class="titlebar__button" id="minimize" title="最小化" aria-label="最小化">—</button>
+        <button class="titlebar__button" id="maximize" title="最大化/还原" aria-label="最大化/还原">□</button>
+        <button class="titlebar__button titlebar__button--close" id="close" title="关闭" aria-label="关闭">✕</button>
       </div>
     </header>
 
-    <main class="loading-stage">
-      <section class="loading-card">
-        <h1>正在启动 DeepSeek Harness</h1>
-        <p>正在准备本地 Agent 服务与工作区环境，请稍候。</p>
-        <div class="progress" aria-label="正在启动"></div>
-      </section>
-    </main>
+    <div class="startup" id="startupView">
+      <div class="startup__spinner"></div>
+      <div class="startup__text">正在启动本地 Harness 服务与工作区环境，请稍候…</div>
+    </div>
 
     <script>
-      const titlebar = document.getElementById('titlebar')
-      const title = document.getElementById('page-title')
-      const maximizeButton = document.getElementById('maximize')
-
-      function renderWindowState(state) {
-        const maximized = Boolean(state?.maximized)
-        document.body.classList.toggle('maximized', maximized)
-        maximizeButton.title = maximized ? '还原' : '最大化'
-        maximizeButton.setAttribute('aria-label', maximized ? '还原' : '最大化')
+      'use strict'
+      const win = window.desktopWindow
+      if (!win) {
+        throw new Error('desktopWindow bridge missing: preload did not load')
       }
 
-      document.getElementById('minimize').addEventListener('click', () => {
-        window.desktopWindow.minimize()
+      // Window controls
+      document.getElementById('minimize').addEventListener('click', () => win.minimize())
+      document.getElementById('maximize').addEventListener('click', () => win.toggleMaximize())
+      document.getElementById('close').addEventListener('click', () => win.close())
+
+      // Keep the maximize button glyph in sync with the actual window state.
+      const maximizeButton = document.getElementById('maximize')
+      win.onStateChange(({ maximized }) => {
+        maximizeButton.textContent = maximized ? '❐' : '□'
+        maximizeButton.title = maximized ? '还原' : '最大化'
       })
 
-      maximizeButton.addEventListener('click', () => {
-        window.desktopWindow.toggleMaximize()
+      // Mirror the harness page title (sent by the main process).
+      win.onPageTitle(title => {
+        document.getElementById('pageTitle').textContent = title || 'DeepSeek Harness'
+        document.title = title || 'DeepSeek Harness Desktop'
       })
 
-      document.getElementById('close').addEventListener('click', () => {
-        window.desktopWindow.close()
+      // Initial state sync.
+      void win.getState().then(state => {
+        maximizeButton.textContent = state.maximized ? '❐' : '□'
+        maximizeButton.title = state.maximized ? '还原' : '最大化'
       })
 
-      titlebar.addEventListener('dblclick', event => {
-        if (event.target.closest('.window-controls')) return
-        window.desktopWindow.toggleMaximize()
-      })
-
-      window.desktopWindow.getState().then(renderWindowState)
-      window.desktopWindow.onStateChange(renderWindowState)
-      window.desktopWindow.onPageTitle(nextTitle => {
-        title.textContent = nextTitle || 'DeepSeek Harness'
+      // When the harness view replaces the startup screen, hide it. The main
+      // process hides it implicitly because the view covers the area; this is
+      // a visual safety net for the startup text lingering behind it.
+      window.addEventListener('resize', () => {
+        document.getElementById('startupView').classList.add('hidden')
       })
     </script>
   </body>

@@ -1,20 +1,34 @@
 'use strict'
+/**
+ * DeepSeek Harness Desktop — preload bridge (clean-room implementation).
+ *
+ * Exposes a minimal, frozen window-control surface to the trusted shell page
+ * (shell.html) only. The harness content view loads WITHOUT this preload.
+ *
+ * Contract surface (kept stable for the shell page and QA):
+ *   window.desktopWindow = { minimize, toggleMaximize, close, getState,
+ *                            onStateChange, onPageTitle }
+ */
 
 const { contextBridge, ipcRenderer } = require('electron')
 
+/** Send a window-control action to the main process. */
+function sendControl(action) {
+  ipcRenderer.send('desktop:window-control', action)
+}
+
+/** Subscribe to a main-process push event and return an unsubscribe fn. */
+function subscribe(channel, callback) {
+  const listener = (_event, payload) => callback(payload)
+  ipcRenderer.on(channel, listener)
+  return () => ipcRenderer.removeListener(channel, listener)
+}
+
 contextBridge.exposeInMainWorld('desktopWindow', Object.freeze({
-  minimize: () => ipcRenderer.send('desktop:window-control', 'minimize'),
-  toggleMaximize: () => ipcRenderer.send('desktop:window-control', 'toggle-maximize'),
-  close: () => ipcRenderer.send('desktop:window-control', 'close'),
+  minimize: () => sendControl('minimize'),
+  toggleMaximize: () => sendControl('toggle-maximize'),
+  close: () => sendControl('close'),
   getState: () => ipcRenderer.invoke('desktop:get-window-state'),
-  onStateChange: callback => {
-    const listener = (_event, state) => callback(state)
-    ipcRenderer.on('desktop:window-state', listener)
-    return () => ipcRenderer.removeListener('desktop:window-state', listener)
-  },
-  onPageTitle: callback => {
-    const listener = (_event, title) => callback(title)
-    ipcRenderer.on('desktop:page-title', listener)
-    return () => ipcRenderer.removeListener('desktop:page-title', listener)
-  },
+  onStateChange: callback => subscribe('desktop:window-state', callback),
+  onPageTitle: callback => subscribe('desktop:page-title', callback),
 }))
