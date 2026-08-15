@@ -1,86 +1,262 @@
 # DeepSeek Harness Desktop
 
-[中文](README.md) · [Releases](https://github.com/cc1252/deepseek-harness-desktop/releases)
+[中文](README.md)
 
-An open-source, unofficial Windows Electron wrapper for
-[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness).
+An open-source, unofficial desktop client for
+[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) covering three
+platforms:
+
+| Platform | Form | Status |
+| --- | --- | --- |
+| Windows | Electron installer + portable exe | ✅ shipped |
+| macOS | Electron `.dmg` (x64 / arm64, ad-hoc signed) | ✅ code + CI ready; dmg produced on macOS/CI |
+| HarmonyOS | DevEco ArkTS thin client (ArkWeb loads the LAN host) | ✅ project ready; build on device/emulator |
 
 The desktop process starts the official `@deepseek-ai/dsh` local web server and
 loads its unmodified UI in a sandboxed Electron `WebContentsView`. The wrapper
 only owns process lifecycle, native-window integration, navigation policy, and
-the custom title bar.
+the custom title bar. The HarmonyOS app bundles no runtime: it connects over
+the LAN to `dsh web` running on your own computer.
 
 > [!IMPORTANT]
-> This is not an official DeepSeek product. It does not provide model credits
-> or bypass API authentication. DeepSeek Harness is currently a Developer
-> Preview; do not open untrusted projects with elevated permissions.
+> This project is not an official DeepSeek product and does not provide model
+> quota or bypass API authentication. DeepSeek Harness is still a Developer
+> Preview; do not open untrusted projects with elevated privileges.
 
 ![DeepSeek Harness Desktop](docs/screenshot.png)
 
-## Downloads
-
-[GitHub Releases](https://github.com/cc1252/deepseek-harness-desktop/releases)
-contains the complete NSIS installer, a portable executable, SHA-256 checksums,
-an explicit source snapshot, and GitHub-generated source archives. Community builds are not commercially
-code-signed, so Windows may display an unknown-publisher warning.
-The installer uses the standard per-user application directory to avoid legacy
-Windows path-length limits. Use the portable build when a custom location is
-required.
-
-## Pinned components
+## Pinned versions
 
 | Component | Version |
 | --- | --- |
-| `@deepseek-ai/dsh` | `0.1.0-rc.6` |
+| DeepSeek Harness (`@deepseek-ai/dsh`) | `0.1.0-rc.6` |
 | Electron | `43.4.0` |
 | Bundled Node.js | `24.19.0` |
 | electron-builder | `26.15.3` |
 
+Versions are pinned in both `package-lock.json` files. `npm run setup` downloads
+the Node.js runtime from the official site and verifies it against both a
+repository-pinned value and the official `SHASUMS256.txt` (Windows x64 plus
+macOS arm64/x64 archives are pinned).
+
 ## Run from source
 
-Requirements: Windows 10/11 x64, Node.js 24, npm, and PowerShell 5 or newer.
+Requirements: Node.js 24, npm, git.
+
+### Windows
+
+PowerShell 5 or later is also required.
 
 ```powershell
-git clone https://github.com/cc1252/deepseek-harness-desktop.git
+git clone <this repository>
 cd deepseek-harness-desktop
 npm ci
 npm run setup
-npm run start
+npm start
 ```
 
-`npm run setup` installs the pinned Harness dependency tree, downloads the
-official Node.js Windows runtime, verifies it against the official
-`SHASUMS256.txt` and a repository-pinned checksum, extracts the upstream icon,
-and generates bundled dependency license notices.
+### macOS
 
-## Build Windows releases
+Xcode Command Line Tools are also required (`xcode-select --install`) for native
+module compilation and electron-builder packaging.
+
+```sh
+git clone <this repository>
+cd deepseek-harness-desktop
+npm ci
+npm run setup
+npm start
+```
+
+The first screenshot-QA run on macOS asks for Screen Recording permission. If
+the grant is unavailable, the screenshot hook records the documented skip
+(`macOS screen capture unavailable` in `desktop.log`); the window-controls QA
+still runs.
+
+## Build releases
+
+### Windows
 
 ```powershell
 npm ci
 npm run build:windows
 ```
 
-The `dist/` directory will contain the NSIS installer, portable executable,
-unpacked build, and `SHA256SUMS.txt`.
+Outputs in `dist/`: NSIS installer, portable exe, `win-unpacked/`, source
+snapshot, and `SHA256SUMS.txt`. The installer is unsigned, so Windows may show
+"unknown publisher". **Install-location policy (since 2026-08-15)**: the
+directory page is enabled; the default directory is relocated to the first
+non-system drive, and interactive installs may choose any path. Enforced by
+`build/installer.nsh` and asserted by `npm run check`.
 
-## Security model
+### macOS
 
-- The Harness service listens on a random `127.0.0.1` port.
-- The upstream UI uses `sandbox: true`, `contextIsolation: true`, and
-  `nodeIntegration: false`.
-- The title bar receives only a narrow minimize/maximize/close IPC bridge.
-- Non-local navigation is delegated to the operating system browser.
-- Closing the desktop app stops the child Harness process.
+On a Mac the host architecture is detected automatically (override with
+`ARCH=x64` or `ARCH=arm64`):
 
-Application data and logs are stored below:
-
-```text
-%APPDATA%\deepseek-harness-desktop\harness-home
-%APPDATA%\deepseek-harness-desktop\logs\desktop.log
+```sh
+npm ci
+npm run build:mac        # = scripts/build.sh
 ```
 
-## License and attribution
+Outputs `dist/DeepSeek-Harness-Desktop-<version>-<arch>.dmg` and
+`dist/SHA256SUMS-mac.txt`. The script ad-hoc signs the `.app` and rebuilds the
+dmg from the signed bundle. First launch: mount the dmg, drag the app to
+`/Applications`, then **right-click → Open** (one quarantine prompt for ad-hoc
+builds).
 
-The wrapper is available under the [MIT License](LICENSE). DeepSeek Harness and
-the whale icon belong to the upstream project and are used under its MIT
-license. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for details.
+One-command verification (QA smoke + package + signature + mount test):
+
+```sh
+bash scripts/verify-macos.sh
+```
+
+CI: `.github/workflows/macos-release.yml` builds on `macos-15` (arm64) and
+`macos-15-intel` (x64), and attaches both dmgs to the GitHub Release for `v*`
+tags. The screenshot QA is skipped in CI (no Screen Recording grant); the
+window-controls QA still runs.
+
+## HarmonyOS thin client
+
+### Topology
+
+```text
+Your PC (Windows/macOS)                      HarmonyOS device / emulator
+┌─────────────────────────────┐             ┌──────────────────────────┐
+│ dsh web bound to 0.0.0.0:8080│    LAN     │ harmonyos/ DevEco project │
+│ official UI + tool runtime   │ ─────────▶ │ ArkWeb loads http://<PC-IP>:8080 │
+└─────────────────────────────┘             └──────────────────────────┘
+```
+
+The HarmonyOS app is a thin client: sessions, tools, and model calls all run on
+the host PC.
+
+### Host deployment (read this first)
+
+**The CLI deliberately rejects `dsh web --host 0.0.0.0`** for safety. Binding to
+a non-loopback address is only possible via a user-level profile patch. For port
+8080:
+
+1. Create `$DSH_HOME/profiles/web/cordis.patch.yml` (`%USERPROFILE%\.dsh` on
+   Windows, `~/.dsh` on macOS):
+
+   ```yaml
+   - id: webserver
+     config:
+       host: 0.0.0.0
+       port: 8080
+   ```
+
+2. Start without `--host`:
+
+   ```sh
+   dsh web
+   # prints e.g.: dsh web: http://127.0.0.1:8080 (LAN: http://<PC-IP>:8080)
+   ```
+
+3. Open the firewall port and use the real LAN IP (the printed LAN address can
+   be a WSL/virtual adapter address).
+
+4. **Acceptance**: first load `http://<PC-IP>:8080` in a phone browser on the
+   same LAN and complete a real conversation (new session → question → reply).
+   Page load alone is not enough. With `0.0.0.0` the `/api` trust fence
+   auto-trusts LAN IPv4 literals; hostname access requires
+   `dsh web --trusted-host <host[:port]>`.
+
+> [!WARNING]
+> `dsh web` has no TLS and no authentication. Binding `0.0.0.0` exposes
+> Harness to the network — use it only on trusted LANs and restore
+> `127.0.0.1` afterwards.
+
+### Build and run the HarmonyOS app
+
+1. Open `harmonyos/` with DevEco Studio 6.x (Stage model + ArkTS).
+2. If the SDK/API version does not match, set `compatibleSdkVersion` in
+   `build-profile.json5` to an API installed locally (the project defaults to
+   `5.0.0(12)`).
+3. Sign in to DevEco with a Huawei account for free automatic signing on a real
+   device, or use a local emulator.
+4. Enter the host address (default placeholder `http://192.168.1.100:8080` —
+   change it to the real PC IP) and tap Connect. The URL is persisted and
+   reloaded on startup; errors show a retry page.
+5. **Acceptance**: complete a real conversation (new session → question →
+   streamed reply).
+
+Plaintext HTTP is path A (MVP). If your ArkWeb build still reports
+`net::ERR_CLEARTEXT_NOT_PERMITTED`, follow path B in `harmonyos/README.md`
+(https + mkcert self-signed CA + reverse proxy, or the cleartext configuration
+supported by your SDK). Both paths must pass a real `/api` interaction.
+
+## Layout
+
+```text
+.
+├─ main.js                         Electron main process, Harness child, content view
+├─ preload.js                      minimal window-control bridge
+├─ shell.html                      custom title bar and startup view
+├─ build/
+│  ├─ deepseek-harness.svg         official whale icon from the Harness package
+│  ├─ icon.png / icon.icns         macOS icons (generated from the SVG and committed)
+│  └─ installer.nsh                Windows install-location policy
+├─ harness/                        isolated runtime dependency tree and lockfile
+├─ scripts/
+│  ├─ prepare-runtime.mjs          cross-platform runtime preparation (npm run setup)
+│  ├─ prepare-runtime.ps1          legacy Windows entry point (kept for compatibility)
+│  ├─ generate-icons.mjs           SVG -> PNG/ICNS using the harness dependency tree
+│  ├─ build-windows.ps1 / build.sh  Windows / macOS one-command builds
+│  ├─ verify-macos.sh              macOS end-to-end acceptance script
+│  └─ verify-source.mjs            source and packaging policy gate (npm run check)
+├─ harmonyos/                      HarmonyOS DevEco thin-client project
+├─ dist/                           per-platform artifacts
+└─ .github/workflows/              Windows / macOS release automation
+```
+
+## API key and data
+
+The app inherits the launching environment, so an existing `DEEPSEEK_API_KEY`
+works directly, or configure a provider under Models in the Harness UI. This
+project never stores, uploads, or embeds API keys.
+
+Desktop user data and logs:
+
+```text
+Windows: %APPDATA%\deepseek-harness-desktop\harness-home
+         %APPDATA%\deepseek-harness-desktop\logs\desktop.log
+macOS:   ~/Library/Application Support/deepseek-harness-desktop/harness-home
+         ~/Library/Application Support/deepseek-harness-desktop/logs/desktop.log
+```
+
+The HarmonyOS app persists only the host URL setting; no session data is stored.
+
+## Security boundary
+
+- The desktop Harness service listens on a random `127.0.0.1` port;
+- the official page runs in a `sandbox: true`, `contextIsolation: true`,
+  `nodeIntegration: false` content view;
+- the custom title bar can only request minimize, maximize/restore, and close
+  through a narrow IPC bridge;
+- non-local navigation opens in the system browser and the page never gets
+  Node.js access;
+- quitting the single-instance app stops the Harness child process;
+- the HarmonyOS host binding to `0.0.0.0` is an explicit, reversible profile
+  patch — never the default.
+
+## Upstream, icon and licenses
+
+The desktop shell (`main.js` / `preload.js` / `shell.html` and build scripts) is
+original work by this repository under the [MIT License](LICENSE). DeepSeek
+Harness and the official whale icon belong to
+[deepseek-ai](https://github.com/deepseek-ai) and are used under its MIT
+license. `@deepseek-ai/dsh`, Electron, and Node.js are third-party
+distributions; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+## Contributing
+
+Issues and pull requests are welcome. Before submitting, run:
+
+```sh
+npm ci
+npm run check
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).

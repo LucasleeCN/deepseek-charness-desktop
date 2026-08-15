@@ -25,6 +25,14 @@ build/THIRD_PARTY_LICENSES.txt
 Thumbs.db
 desktop.ini
 
+# HarmonyOS / DevEco Studio build outputs
+harmonyos/.hvigor/
+harmonyos/**/.cxx/
+harmonyos/**/build/
+harmonyos/**/oh_modules/
+harmonyos/local.properties
+harmonyos/**/.preview/
+
 # QA artifacts (evidence kept on disk, not committed)
 qa/
 dist/

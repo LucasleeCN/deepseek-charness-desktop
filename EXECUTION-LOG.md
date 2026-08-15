@@ -73,3 +73,46 @@ sis.warningsAsErrors=false：uninstaller 编译 pass 中 customInit 专用函数
 - 另：C 盘已安装的旧版本已卸载（%LOCALAPPDATA%\Programs\DeepSeek Harness Desktop，含注册表条目）。
 - 打包产物（9:49 最终版）：Setup/Portable/Source + SHA256SUMS，校验一致。
 
+## M8 — 阶段 2 macOS 移植（代码与 CI 完成，待 macOS 机器验收）
+
+- 2.1 跨平台运行时脚本：`scripts/prepare-runtime.mjs`（此前已在工作区）并入 `npm run setup`；修复 Windows 归档固定 SHA-256 笔误（`...84ACDDDC...` → 官方 `...84ACDDC7...`），darwin arm64/x64 固定值与 nodejs.org `SHASUMS256.txt` 逐字节核对一致；增加 LICENSE/SHASUMS 落地与可执行位设置；受约束环境下 `node --version` 管道捕获失败时退化为执行探测，避免重复下载。
+- 2.2 主进程平台差异：`main.js` 的 `bundledNodeBinaryName()`（win=node.exe / darwin=node）；macOS 最小应用菜单（About/Quit/编辑/窗口，保留 Cmd 快捷键）+ dock 图标（build/icon.png）；`app.setAppUserModelId` 仅 Windows 调用；截图 QA 在 macOS 无屏幕录制授权时记录 `macOS screen capture unavailable` 并按计划跳过而非失败。
+- 图标：`scripts/generate-icons.mjs` 复用 harness 依赖树中的 sharp 渲染官方 SVG → `build/icon.png`(1024², 34,049B) 与 `build/icon.icns`(58,192B，icp4/5/6 + ic07/08/09/10 七个 PNG chunk，结构已验证)；脚本另带 Chrome headless 兜底，不新增 npm 依赖。
+- 2.4 打包：package.json 新增 `build.mac`（dmg、icon.icns、identity:null、hardenedRuntime/gatekeeperAssess=false）与 `npm run build:mac`；`scripts/build.sh` = check → setup → icons → electron-builder dmg(本机架构) → ad-hoc codesign → 签名校验 → 用已签名 app 重建 dmg → SHA256SUMS-mac.txt。
+- 验收脚本：`scripts/verify-macos.sh`（前置检查 → npm ci → setup → icons → check → 截图 QA（含授权跳过分支）→ 窗口控制 QA + 无残留进程 → build.sh → 签名与 dmg 挂载验证 → 打印剩余手工项）；bash -n 语法检查通过。
+- 2.5 CI：`.github/workflows/macos-release.yml`（macos-15=arm64 与 macos-15-intel=x64 双 job，各自 setup→icons→check→窗口控制 QA→build.sh→上传；release job 在 tag v* 时合并上传两个 dmg）。说明：计划原文的 macos-13 已于 2025-09 被 GitHub 退役，改用现行标签。
+- verify-source.mjs 新增 mac 策略断言（setup 必须走 mjs、dmg-only、identity:null、icon.icns 且 ICNS magic 校验）。
+- Windows 回归：`npm run check` 通过；`npm run setup` 幂等通过（复用既有运行时，不再重复下载）；`npm run build:dir`（win-unpacked）成功。
+- ⏳ 待 macOS 机器执行：`bash scripts/verify-macos.sh`（用户已确认会执行并把日志/结果反馈）。当前 Windows 环境无法产出 dmg 或跑 mac QA，按计划属预期。
+
+## M9 — 阶段 3 HarmonyOS 瘦客户端（工程完成，待 DevEco 真机/模拟器构建）
+
+- 工程：`harmonyos/` Stage 模型 + ArkTS 空能力模板（AppScope + entry），默认
+  `compatibleSdkVersion = "5.0.0(12)"`（格式经 2026-08 官方文档核验；DevEco 6
+  按字段语义可编译，compileSdkVersion 省略即用本机内置 SDK；README 已写调整方法）。
+- 页面：`pages/Index.ets` = 顶部宿主地址设置栏（TextInput + 44vp 连接按钮 +
+  状态文本）+ ArkWeb `Web` 组件（javaScriptAccess/domStorageAccess/zoomAccess/
+  mixedMode(MixedMode.All)）+ onPageBegin/onPageEnd/onErrorReceive 状态机 +
+  错误覆盖层与“重试”。宿主 URL 用 `@kit.ArkData` preferences
+  （getPreferencesSync/putSync/flush）持久化，启动自动加载；仅持久化 URL。
+- 权限与配置：module.json5 声明 `ohos.permission.INTERNET`；startWindowIcon/
+  startWindowBackground/主页面 profile 齐全；应用与入口图标由
+  `build/icon.png` 复制（1024² PNG）。
+- 关键事实核验（研究子代理，官方文档 V229/2026-08）：
+  - Stage 模型 **不存在** `network.cleartextTraffic`/`networkSecurityConfig`
+    这类 module.json5 字段（那是 FA config.json + `@system.fetch` 旧配置）；
+  - ArkWeb 纯 HTTP 页面只需 INTERNET 权限；`ERR_CLEARTEXT_NOT_PERMITTED` 主要
+    对应 HTTPS 页加载 HTTP 子资源的混合内容拦截，官方放行是
+    `.mixedMode(MixedMode.All)` —— 工程已内置；
+  - ArkWeb 私有网络访问（PNA）配置未在官方 ArkWeb 文档中发现（未查实项）。
+- 文档：`harmonyos/README.md` = 宿主 profile 补丁部署（`0.0.0.0:8080`，CLI
+  禁传 `--host`）+ 防火墙 + 手机浏览器真实会话预验收 + DevEco 构建/自动签名 +
+  路径 A（明文，MVP）/ 路径 B（mkcert + Caddy + `--trusted-host` 注意项）+
+  风险清单。根 README（中/英）同步三端说明。
+- verify-source.mjs 新增 HarmonyOS 断言（工程文件齐全、INTERNET 权限、Web
+  组件存在、Preferences 持久化、compatibleSdkVersion 声明）；全部 JSON/JSON5
+  已通过 JSON 语法解析；`npm run check` 通过。
+- ⏳ 待 DevEco 机器执行（用户确认由其在 DevEco 打开构建）：Build Hap →
+  真机/模拟器连局域网宿主 → 输入实际 IP → 完成一次真实会话 → 验证设置/重连/
+  重启记忆。本机未安装 DevEco/SDK，HAP 构建与端到端会话按计划留待用户执行。
+

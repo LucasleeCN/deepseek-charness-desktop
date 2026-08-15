@@ -1,7 +1,7 @@
 {
   "name": "deepseek-harness-desktop",
   "version": "0.1.0",
-  "description": "Unofficial Windows desktop wrapper for DeepSeek Harness",
+  "description": "Unofficial desktop wrapper for DeepSeek Harness (Windows/macOS)",
   "author": "DeepSeek Harness Desktop contributors",
   "main": "main.js",
   "private": true,
@@ -15,15 +15,17 @@
   },
   "homepage": "https://github.com/cc1252/deepseek-harness-desktop#readme",
   "scripts": {
-    "setup": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-runtime.ps1",
+    "setup": "node scripts/prepare-runtime.mjs",
     "start": "electron .",
     "dev": "npm run setup && electron .",
-    "check": "node --check main.js && node --check preload.js && node scripts/verify-source.mjs",
+    "check": "node --check main.js && node --check preload.js && node --check scripts/prepare-runtime.mjs && node --check scripts/generate-icons.mjs && node scripts/verify-source.mjs",
+    "icons": "node scripts/generate-icons.mjs",
     "licenses": "node scripts/generate-third-party-notices.mjs",
     "build:dir": "npm run setup && electron-builder --dir --win --x64 --publish never",
     "build:installer": "npm run setup && electron-builder --win nsis --x64 --publish never",
     "build:portable": "npm run setup && electron-builder --win portable --x64 --publish never",
-    "build:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-windows.ps1"
+    "build:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-windows.ps1",
+    "build:mac": "bash scripts/build.sh"
   },
   "dependencies": {},
   "devDependencies": {
@@ -45,6 +47,7 @@
       "preload.js",
       "shell.html",
       "build/deepseek-harness.svg",
+      "build/icon.png",
       "package.json"
     ],
     "extraResources": [
@@ -92,6 +95,18 @@
         }
       ],
       "signExecutable": false
+    },
+    "mac": {
+      "icon": "build/icon.icns",
+      "category": "public.app-category.developer-tools",
+      "target": [
+        {
+          "target": "dmg"
+        }
+      ],
+      "identity": null,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false
     },
     "nsis": {
       "artifactName": "DeepSeek-Harness-Desktop-Setup-${version}-${arch}.${ext}",

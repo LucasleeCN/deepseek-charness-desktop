@@ -1,0 +1,3 @@
+# Define project specific obfuscation rules here.
+# The project does not enable obfuscation (see entry/build-profile.json5),
+# this file is kept so the default buildOptionSet matches the DevEco template.

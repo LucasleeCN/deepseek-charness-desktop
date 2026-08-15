@@ -1,0 +1,104 @@
+name: macOS release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - v*
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # GitHub-hosted macOS 15 runners: macos-15 is arm64,
+          # macos-15-intel is x64. Each runner prepares the bundled Node
+          # runtime and harness native modules for its own architecture.
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x64
+    runs-on: ${{ matrix.runner }}
+    env:
+      ARCH: ${{ matrix.arch }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24.19.0
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            harness/package-lock.json
+
+      - name: Install build dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Prepare bundled runtime
+        run: npm run setup
+
+      - name: Regenerate icons
+        run: node scripts/generate-icons.mjs
+
+      - name: Verify source
+        run: npm run check
+
+      - name: Window controls QA (auto quit)
+        # Screenshot QA is intentionally skipped in CI: desktopCapturer needs
+        # Screen Recording permission on macOS and cannot be granted headlessly.
+        # The window-control hook exercises maximize/restore/minimize/close and
+        # quits by itself.
+        run: npm start
+        env:
+          DSH_DESKTOP_QA_WINDOW_CONTROLS: "1"
+          DSH_DESKTOP_QA_AUTO_QUIT: "1"
+          DSH_DESKTOP_QA_SCREENSHOT: ""
+
+      - name: Build ad-hoc signed dmg
+        run: bash scripts/build.sh
+
+      - name: Name per-arch checksum file
+        run: mv dist/SHA256SUMS-mac.txt dist/SHA256SUMS-mac-${{ matrix.arch }}.txt
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: deepseek-harness-desktop-macos-${{ matrix.arch }}
+          if-no-files-found: error
+          path: |
+            dist/DeepSeek-Harness-Desktop-*-${{ matrix.arch }}.dmg
+            dist/SHA256SUMS-mac-${{ matrix.arch }}.txt
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download macOS artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: deepseek-harness-desktop-macos-*
+          merge-multiple: true
+          path: dist
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mapfile -t assets < <(ls dist/DeepSeek-Harness-Desktop-*-arm64.dmg \
+                                   dist/DeepSeek-Harness-Desktop-*-x64.dmg \
+                                   dist/SHA256SUMS-mac-*.txt)
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || \
+            gh release create "$GITHUB_REF_NAME" \
+              --verify-tag \
+              --generate-notes \
+              --title "DeepSeek Harness Desktop $GITHUB_REF_NAME"
+          gh release upload "$GITHUB_REF_NAME" "${assets[@]}" --clobber
