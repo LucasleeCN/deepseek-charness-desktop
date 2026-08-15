@@ -181,3 +181,26 @@ Code Review 三条结论均已修复：
 - 待用户按步骤签名后重新 Run 并执行 3.5 验收（UI 加载 / 真实会话 / 重连 /
   重启记忆）。
 
+## M13 — 鸿蒙真机联调：会话列表空白的根因与修复（2026-08-15）
+
+- 通过 hdc + uitest 自动操作真机复现并定位：
+  - App 地址仍为默认占位 `http://192.168.1.100:8787`；状态“已连接”是
+    `onPageEnd` 在错误页后误报的 UI bug；
+  - 修正为 PC 真实 IP `http://<PC-IP>:8787` 后，官方 UI 外壳正常加载
+    （可看到侧边栏/新建会话按钮），但 hilog 持续
+    `[web-runtime] connection lost, retry #N`，会话与工作区列表为空；
+  - 根因：官方 Web UI 的下行实时通道是 **WebSocket（ws://）**，ArkWeb 对
+    明文 WebSocket 有系统策略限制；HTTP 静态页与 POST `/api/*` 可达，但
+    WebSocket 无法建立 → 应用永远处于 reconnecting，列表数据不落地。
+- 修复（已提交）：
+  - `module.json5` 增加 `"network": { "cleartextTraffic": true }`（配置字段
+    来自本机 DevEco 6.1.1 SDK 的 `configSchema_rich.json`，之前的“不存在”
+    研究结论修正）与 `ohos.permission.GET_NETWORK_INFO`；
+  - `Index.ets` 增加 `.databaseAccess(true)`；修复 `onErrorReceive` →
+    `onPageEnd` 覆盖错误状态的顺序 bug（loadError 门闩）；状态栏显示当前
+    连接的 URL；
+  - `harmonyos/README.md` 更新路径 A 事实与 “connection lost” 排障；
+    verify-source 新增对应断言。
+- 待用户：DevEco 重新 Build/Run（module.json5 变更必须重装），再用
+  `http://<PC-IP>:8787` 验证会话列表与真实会话。
+

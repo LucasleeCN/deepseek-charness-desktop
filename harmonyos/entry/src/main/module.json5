@@ -11,6 +11,9 @@
     ],
     "deliveryWithInstall": true,
     "installationFree": false,
+    "network": {
+      "cleartextTraffic": true
+    },
     "pages": "$profile:main_pages",
     "abilities": [
       {
@@ -37,6 +40,9 @@
     "requestPermissions": [
       {
         "name": "ohos.permission.INTERNET"
+      },
+      {
+        "name": "ohos.permission.GET_NETWORK_INFO"
       }
     ]
   }

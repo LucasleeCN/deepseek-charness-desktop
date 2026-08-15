@@ -155,12 +155,21 @@ if (manifest.build?.mac?.hardenedRuntime !== false || manifest.build?.mac?.gatek
   if (!moduleJson5.includes('ohos.permission.INTERNET')) {
     throw new Error('The HarmonyOS module must declare ohos.permission.INTERNET.')
   }
+  if (!moduleJson5.includes('ohos.permission.GET_NETWORK_INFO')) {
+    throw new Error('The HarmonyOS module must declare ohos.permission.GET_NETWORK_INFO for ArkWeb WebSocket handshakes.')
+  }
+  if (!moduleJson5.includes('"cleartextTraffic": true')) {
+    throw new Error('The HarmonyOS module must enable network.cleartextTraffic for the LAN HTTP/WebSocket host.')
+  }
   const indexEts = await fs.readFile(path.join(projectRoot, 'harmonyos/entry/src/main/ets/pages/Index.ets'), 'utf8')
   if (!indexEts.includes('Web({ src')) {
     throw new Error('The HarmonyOS page must host the ArkWeb Web component.')
   }
   if (!indexEts.includes('getPreferencesSync')) {
     throw new Error('The HarmonyOS page must persist the host URL with Preferences.')
+  }
+  if (!indexEts.includes('databaseAccess(true)')) {
+    throw new Error('The HarmonyOS page must enable ArkWeb database access for the official UI.')
   }
   const rootBuildProfile = await fs.readFile(path.join(projectRoot, 'harmonyos/build-profile.json5'), 'utf8')
   if (!rootBuildProfile.includes('compatibleSdkVersion')) {

@@ -79,17 +79,17 @@ webserver 绑定局域网。假设用 8080 端口：
 ### 路径 A：IP 直连明文（MVP）
 
 工程默认使用 `http://<PC-IP>:8787`（桌面远程开关的默认端口）。按 2026-08
-官方文档核验：
+SDK 配置 schema 核验并已在工程内启用：
 
-- **Stage 模型没有 `network.cleartextTraffic` / `networkSecurityConfig` 这类
-  module.json5 字段**（那是旧 FA 模型 `config.json` + `@system.fetch` 的配置），
-  ArkWeb 加载纯 HTTP 页面不需要额外明文配置；
-- 页面已声明 `ohos.permission.INTERNET`，并且已设置
-  `.domStorageAccess(true)`、`.javaScriptAccess(true)`、
-  `.mixedMode(MixedMode.All)`；
-- `net::ERR_CLEARTEXT_NOT_PERMITTED` 在 ArkWeb 中最常见的来源是 **HTTPS 页面
-  加载 HTTP 子资源**（混合内容被默认 `MixedMode.None` 拦截）。本工程已用
-  `MixedMode.All` 放行，但仍以真机实测为准。
+- `entry/src/main/module.json5` 已声明 **`network.cleartextTraffic: true`**，
+  放行 ArkWeb 对局域网 Host 的明文 HTTP/WebSocket；
+- 权限已声明 `ohos.permission.INTERNET` 与
+  `ohos.permission.GET_NETWORK_INFO`；
+- Web 组件已设置 `.domStorageAccess(true)`、`.databaseAccess(true)`、
+  `.javaScriptAccess(true)`、`.mixedMode(MixedMode.All)`；
+- 官方 UI 的实时通道是 **WebSocket**，不是普通 HTTP——若真机日志出现
+  `[web-runtime] connection lost, retry #N`，几乎都是明文 ws:// 被拦；
+  `cleartextTraffic` 打开后应恢复。
 
 验证步骤不变：页面加载 + 完成一次真实会话 → 路径 A 通过；失败则先看
 `onErrorReceive` 的错误码（-29 即 CLEARTEXT_NOT_PERMITTED），确认宿主机与
@@ -132,6 +132,23 @@ webserver 绑定局域网。假设用 8080 端口：
    `entry-default-signed.hap`，Run 即可安装。
 4. 真机需开启开发者模式/USB 调试，并加入华为账号的调试设备授权
    （Device Manager 或 DevEco 弹出的 UDID 注册提示）。
+
+### 5.1 页面能开但会话列表空白：`connection lost, retry #N`
+
+症状：官方 UI 外壳加载了，但会话/工作区列表为空，hilog 里反复出现
+`[web-runtime] connection lost, retry #N`。
+
+原因与处理：
+
+1. 官方 UI 的实时下行通道是 **WebSocket（ws://）**；ArkWeb 对明文
+   WebSocket 有系统策略限制。确认 `module.json5` 已含
+   `"network": { "cleartextTraffic": true }`（本工程已内置），并**重新构建/
+   安装 HAP**（改 module.json5 后必须重装，热更新不生效）。
+2. 确认 App 地址是 **PC 的真实局域网 IP**（如 `http://<PC-IP>:8787`），
+   不是默认占位 `192.168.1.100`，也不是 `127.0.0.1`。
+3. 在 PC 上验证宿主机：`netstat -ano | findstr 8787` 应显示
+   `0.0.0.0:8787 LISTENING`。
+4. 仍失败则走路径 B（https + wss），并记录设备 hilog 中的错误码。
 
 ## 6. 已知限制
 

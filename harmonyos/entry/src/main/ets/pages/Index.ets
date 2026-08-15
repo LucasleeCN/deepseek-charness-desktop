@@ -14,6 +14,8 @@ struct Index {
   @State statusText: string = '未连接';
   @State errorVisible: boolean = false;
   @State connected: boolean = false;
+  @State loadError: boolean = false;
+  @State currentUrl: string = '';
 
   private webController: webview.WebviewController = new webview.WebviewController();
   private dataPreferences: preferences.Preferences | null = null;
@@ -65,7 +67,9 @@ struct Index {
     }
     this.webSrc = normalized;
     this.inputUrl = normalized;
+    this.currentUrl = normalized;
     this.connected = false;
+    this.loadError = false;
     this.errorVisible = false;
     this.statusText = '正在连接…';
     this.persistUrl(normalized);
@@ -78,6 +82,7 @@ struct Index {
       return;
     }
     this.connected = false;
+    this.loadError = false;
     this.errorVisible = false;
     this.statusText = '正在重新连接…';
     this.webController.loadUrl(this.webSrc);
@@ -114,9 +119,11 @@ struct Index {
         .width('100%')
 
         Row() {
-          Text(this.statusText)
+          Text(this.currentUrl === '' ? this.statusText : `${this.statusText} · ${this.currentUrl}`)
             .fontSize(12)
             .fontColor(this.errorVisible ? '#B3261E' : '#667085')
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
         }
         .width('100%')
       }
@@ -128,22 +135,28 @@ struct Index {
         Web({ src: this.webSrc, controller: this.webController })
           .javaScriptAccess(true)
           .domStorageAccess(true)
+          .databaseAccess(true)
           .zoomAccess(true)
           .mixedMode(MixedMode.All)
           .width('100%')
           .height('100%')
           .onPageBegin((event) => {
             this.connected = false;
+            this.loadError = false;
             this.errorVisible = false;
             this.statusText = '正在连接…';
           })
           .onPageEnd((event) => {
+            if (this.loadError) {
+              return;
+            }
             this.connected = true;
             this.errorVisible = false;
             this.statusText = '已连接';
           })
           .onErrorReceive((event) => {
             this.connected = false;
+            this.loadError = true;
             this.errorVisible = true;
             if (event) {
               this.statusText = `加载失败（错误码 ${event.error.getErrorCode()}），请检查宿主地址、防火墙与网络`;
