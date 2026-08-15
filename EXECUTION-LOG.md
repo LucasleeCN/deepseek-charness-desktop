@@ -189,18 +189,22 @@ Code Review 三条结论均已修复：
   - 修正为 PC 真实 IP `http://<PC-IP>:8787` 后，官方 UI 外壳正常加载
     （可看到侧边栏/新建会话按钮），但 hilog 持续
     `[web-runtime] connection lost, retry #N`，会话与工作区列表为空；
-  - 根因：官方 Web UI 的下行实时通道是 **WebSocket（ws://）**，ArkWeb 对
-    明文 WebSocket 有系统策略限制；HTTP 静态页与 POST `/api/*` 可达，但
-    WebSocket 无法建立 → 应用永远处于 reconnecting，列表数据不落地。
+  - 探针实验：ArkWeb 的 `ws://` 到普通回显服务器正常、到 DSH Host 的同源
+    WebSocket 也正常；在运行中宿主注入日志后抓到真正的异常：
+    **`crypto.randomUUID is not a function`**。ArkWeb 缺这个 API，官方前端
+    为每个 RPC envelope 生成 rpcId 时抛错 → 永远 reconnecting，列表不落地。
 - 修复（已提交）：
-  - `module.json5` 增加 `"network": { "cleartextTraffic": true }`（配置字段
-    来自本机 DevEco 6.1.1 SDK 的 `configSchema_rich.json`，之前的“不存在”
-    研究结论修正）与 `ohos.permission.GET_NETWORK_INFO`；
-  - `Index.ets` 增加 `.databaseAccess(true)`；修复 `onErrorReceive` →
-    `onPageEnd` 覆盖错误状态的顺序 bug（loadError 门闩）；状态栏显示当前
-    连接的 URL；
-  - `harmonyos/README.md` 更新路径 A 事实与 “connection lost” 排障；
-    verify-source 新增对应断言。
-- 待用户：DevEco 重新 Build/Run（module.json5 变更必须重装），再用
-  `http://<PC-IP>:8787` 验证会话列表与真实会话。
+  - `Index.ets` 在加载宿主页面前用 `@kit.NetworkKit` 预取 HTML，注入
+    `crypto.randomUUID` polyfill，再通过 `onInterceptRequest` 把修改后的
+    主文档响应交给 ArkWeb（polyfill 在官方 bundle 执行前生效）；
+  - 增加 `.databaseAccess(true)`；修复 `onErrorReceive` → `onPageEnd`
+    覆盖错误状态的顺序 bug（loadError 门闩）；启动/手动连接统一走
+    prepareBootstrap，状态栏显示当前连接 URL；
+  - `module.json5` 增加 `ohos.permission.GET_NETWORK_INFO`；
+  - 曾尝试 `network.cleartextTraffic` 但被 DevEco 6.1.1 的 module schema
+    拒绝（字段不在允许列表），已撤回该字段；WebSocket 明文并非根因。
+  - `harmonyos/README.md` 更新排障（首要原因改为 crypto.randomUUID）；
+    verify-source 增加 polyfill + onInterceptRequest 断言。
+- 待用户：DevEco 重新 Build/Run 后，用 `http://<PC-IP>:8787` 验证
+  会话列表与真实会话。
 

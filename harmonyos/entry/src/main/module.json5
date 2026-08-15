@@ -11,9 +11,6 @@
     ],
     "deliveryWithInstall": true,
     "installationFree": false,
-    "network": {
-      "cleartextTraffic": true
-    },
     "pages": "$profile:main_pages",
     "abilities": [
       {

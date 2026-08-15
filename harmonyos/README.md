@@ -78,18 +78,16 @@ webserver 绑定局域网。假设用 8080 端口：
 
 ### 路径 A：IP 直连明文（MVP）
 
-工程默认使用 `http://<PC-IP>:8787`（桌面远程开关的默认端口）。按 2026-08
-SDK 配置 schema 核验并已在工程内启用：
+工程默认使用 `http://<PC-IP>:8787`（桌面远程开关的默认端口）。鸿蒙端做了
+两件 ArkWeb 适配：
 
-- `entry/src/main/module.json5` 已声明 **`network.cleartextTraffic: true`**，
-  放行 ArkWeb 对局域网 Host 的明文 HTTP/WebSocket；
-- 权限已声明 `ohos.permission.INTERNET` 与
-  `ohos.permission.GET_NETWORK_INFO`；
+- `Index.ets` 在加载宿主页面前预取 HTML，并通过 `onInterceptRequest`
+  注入 **`crypto.randomUUID` polyfill**（当前 ArkWeb 缺这个 API，而官方
+  Web UI 的 RPC/WebSocket 建连依赖它；缺失时表现为页面能开但会话列表
+  空白、日志反复 `connection lost, retry #N`）；
+- 权限已声明 `ohos.permission.INTERNET` 与 `ohos.permission.GET_NETWORK_INFO`；
 - Web 组件已设置 `.domStorageAccess(true)`、`.databaseAccess(true)`、
-  `.javaScriptAccess(true)`、`.mixedMode(MixedMode.All)`；
-- 官方 UI 的实时通道是 **WebSocket**，不是普通 HTTP——若真机日志出现
-  `[web-runtime] connection lost, retry #N`，几乎都是明文 ws:// 被拦；
-  `cleartextTraffic` 打开后应恢复。
+  `.javaScriptAccess(true)`、`.mixedMode(MixedMode.All)`。
 
 验证步骤不变：页面加载 + 完成一次真实会话 → 路径 A 通过；失败则先看
 `onErrorReceive` 的错误码（-29 即 CLEARTEXT_NOT_PERMITTED），确认宿主机与
@@ -138,12 +136,12 @@ SDK 配置 schema 核验并已在工程内启用：
 症状：官方 UI 外壳加载了，但会话/工作区列表为空，hilog 里反复出现
 `[web-runtime] connection lost, retry #N`。
 
-原因与处理：
+原因与处理（真机已定位）：
 
-1. 官方 UI 的实时下行通道是 **WebSocket（ws://）**；ArkWeb 对明文
-   WebSocket 有系统策略限制。确认 `module.json5` 已含
-   `"network": { "cleartextTraffic": true }`（本工程已内置），并**重新构建/
-   安装 HAP**（改 module.json5 后必须重装，热更新不生效）。
+1. **首要原因：ArkWeb 缺少 `crypto.randomUUID`**。官方前端在建立
+   RPC/WebSocket 通道时调用它；缺失时每次建连都失败并重连。本工程已在
+   `Index.ets` 通过 `onInterceptRequest` 注入 polyfill，升级到该版本即可；
+   改的是 ArkTS 代码，需要重新 Build/Run。
 2. 确认 App 地址是 **PC 的真实局域网 IP**（如 `http://<PC-IP>:8787`），
    不是默认占位 `192.168.1.100`，也不是 `127.0.0.1`。
 3. 在 PC 上验证宿主机：`netstat -ano | findstr 8787` 应显示

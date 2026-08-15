@@ -1,15 +1,32 @@
 import { webview } from '@kit.ArkWeb';
 import { preferences } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
+import { http } from '@kit.NetworkKit';
 
 const DEFAULT_HOST_URL: string = 'http://192.168.1.100:8787';
 const PREFERENCES_NAME: string = 'host_settings';
 const KEY_HOST_URL: string = 'host_url';
 
+/**
+ * ArkWeb on HarmonyOS NEXT may lack crypto.randomUUID, which the official
+ * DSH frontend uses for every RPC envelope. The wrapper pre-fetches the host
+ * HTML and injects this polyfill before the page scripts run.
+ */
+const UUID_POLYFILL_SCRIPT: string =
+  '<script>(function(){try{var c=globalThis.crypto||(globalThis.crypto={});' +
+  'if(typeof c.randomUUID!=="function"){c.randomUUID=function(){' +
+  'var b=new Uint8Array(16);var g=c.getRandomValues?c.getRandomValues(b):null;' +
+  'if(g){b[6]=(b[6]&15)|64;b[8]=(b[8]&63)|128;' +
+  'var h=Array.prototype.map.call(b,function(x){return ("0"+x.toString(16)).slice(-2)}).join("");' +
+  'return h.slice(0,8)+"-"+h.slice(8,12)+"-"+h.slice(12,16)+"-"+h.slice(16,20)+"-"+h.slice(20)}' +
+  'var f="xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx";' +
+  'return f.replace(/[xy]/g,function(ch){var r=Math.random()*16|0;var v=ch==="x"?r:(r&3|8);return v.toString(16)})' +
+  '}}}}catch(e){}})();</script>'
+
 @Entry
 @Component
 struct Index {
-  @State webSrc: string = DEFAULT_HOST_URL;
+  @State webSrc: string = '';
   @State inputUrl: string = DEFAULT_HOST_URL;
   @State statusText: string = '未连接';
   @State errorVisible: boolean = false;
@@ -20,15 +37,19 @@ struct Index {
   private webController: webview.WebviewController = new webview.WebviewController();
   private dataPreferences: preferences.Preferences | null = null;
   private context = getContext(this) as common.UIAbilityContext;
+  private bootstrapHtml: string = '';
+  private bootstrapping: boolean = false;
 
   aboutToAppear(): void {
     try {
       this.dataPreferences = preferences.getPreferencesSync(this.context, { name: PREFERENCES_NAME });
       const saved: string = this.dataPreferences.getSync(KEY_HOST_URL, DEFAULT_HOST_URL) as string;
-      this.webSrc = this.normalizeUrl(saved) || DEFAULT_HOST_URL;
-      this.inputUrl = this.webSrc;
+      this.inputUrl = this.normalizeUrl(saved) || DEFAULT_HOST_URL;
+      void this.bootConnect();
     } catch (err) {
       this.statusText = '读取本地设置失败，已使用默认地址';
+      this.inputUrl = DEFAULT_HOST_URL;
+      void this.bootConnect();
     }
   }
 
@@ -58,14 +79,51 @@ struct Index {
     }
   }
 
-  private connect(): void {
+  private injectUuidPolyfill(html: string): string {
+    return html.replace('<head>', `<head>${UUID_POLYFILL_SCRIPT}`)
+  }
+
+  private async prepareBootstrap(url: string): Promise<void> {
+    this.bootstrapHtml = '';
+    this.bootstrapping = true;
+    try {
+      const request = http.createHttp();
+      const response = await request.request(url, {
+        method: http.RequestMethod.GET,
+        expectDataType: http.HttpDataType.STRING,
+        connectTimeout: 10000,
+        readTimeout: 10000,
+      });
+      if (response.responseCode === 200 && typeof response.result === 'string') {
+        this.bootstrapHtml = this.injectUuidPolyfill(response.result);
+      }
+      request.destroy();
+    } catch (err) {
+      this.bootstrapHtml = '';
+    } finally {
+      this.bootstrapping = false;
+    }
+  }
+
+  private async bootConnect(): Promise<void> {
+    const normalized: string = this.normalizeUrl(this.inputUrl);
+    if (normalized === '') {
+      return;
+    }
+    this.inputUrl = normalized;
+    this.currentUrl = normalized;
+    this.statusText = '正在连接…';
+    await this.prepareBootstrap(normalized);
+    this.webSrc = normalized;
+  }
+
+  private async connect(): Promise<void> {
     const normalized: string = this.normalizeUrl(this.inputUrl);
     if (normalized === '') {
       this.statusText = '请输入宿主地址';
       this.errorVisible = true;
       return;
     }
-    this.webSrc = normalized;
     this.inputUrl = normalized;
     this.currentUrl = normalized;
     this.connected = false;
@@ -73,18 +131,24 @@ struct Index {
     this.errorVisible = false;
     this.statusText = '正在连接…';
     this.persistUrl(normalized);
-    this.webController.loadUrl(normalized);
+    await this.prepareBootstrap(normalized);
+    if (this.webSrc !== normalized) {
+      this.webSrc = normalized;
+    } else {
+      this.webController.loadUrl(normalized);
+    }
   }
 
-  private retry(): void {
+  private async retry(): Promise<void> {
     if (this.webSrc === '') {
-      this.connect();
+      await this.connect();
       return;
     }
     this.connected = false;
     this.loadError = false;
     this.errorVisible = false;
     this.statusText = '正在重新连接…';
+    await this.prepareBootstrap(this.webSrc);
     this.webController.loadUrl(this.webSrc);
   }
 
@@ -113,7 +177,7 @@ struct Index {
             .margin({ left: 8 })
             .fontSize(14)
             .onClick(() => {
-              this.connect();
+              void this.connect();
             })
         }
         .width('100%')
@@ -140,14 +204,32 @@ struct Index {
           .mixedMode(MixedMode.All)
           .width('100%')
           .height('100%')
+          .onInterceptRequest((event) => {
+            if (event && this.bootstrapHtml !== '' && event.request.isMainFrame()) {
+              const requestUrl: string = event.request.getRequestUrl();
+              if (requestUrl === this.webSrc || requestUrl === `${this.webSrc}/`) {
+                const response = new WebResourceResponse();
+                response.setResponseCode(200);
+                response.setReasonMessage('OK');
+                response.setResponseMimeType('text/html');
+                response.setResponseEncoding('utf-8');
+                response.setResponseData(this.bootstrapHtml);
+                return response;
+              }
+            }
+            return null;
+          })
           .onPageBegin((event) => {
+            if (this.webSrc === '') {
+              return;
+            }
             this.connected = false;
             this.loadError = false;
             this.errorVisible = false;
             this.statusText = '正在连接…';
           })
           .onPageEnd((event) => {
-            if (this.loadError) {
+            if (this.webSrc === '' || this.loadError) {
               return;
             }
             this.connected = true;
@@ -155,6 +237,9 @@ struct Index {
             this.statusText = '已连接';
           })
           .onErrorReceive((event) => {
+            if (this.webSrc === '') {
+              return;
+            }
             this.connected = false;
             this.loadError = true;
             this.errorVisible = true;
@@ -178,7 +263,7 @@ struct Index {
               .width(96)
               .height(44)
               .onClick(() => {
-                this.retry();
+                void this.retry();
               })
           }
           .width('100%')
