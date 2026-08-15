@@ -107,12 +107,17 @@ class HarnessProcess {
   async start() {
     const { cliPath, nodePath } = this.locate()
     const harnessHome = dataPath('harness-home')
-    fs.mkdirSync(harnessHome, { recursive: true })
+    // Review fix: never start Harness in the user's entire home directory.
+    // dsh treats its launch cwd as the default workspace root, so confine it
+    // to a dedicated directory under userData.
+    const harnessWorkspace = dataPath('harness-home', 'workspace')
+    fs.mkdirSync(harnessWorkspace, { recursive: true })
 
     appendLog(`Starting Harness from ${cliPath} with ${nodePath}`)
+    appendLog(`[desktop] Harness workspace: ${harnessWorkspace}`)
 
     this.child = spawn(nodePath, [cliPath, 'web', '--port', '0'], {
-      cwd: app.getPath('home'),
+      cwd: harnessWorkspace,
       env: {
         ...process.env,
         DSH_HOME: harnessHome,

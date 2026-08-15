@@ -41,8 +41,8 @@ jobs:
       - name: Install build dependencies
         run: npm ci --no-audit --no-fund
 
-      - name: Prepare bundled runtime
-        run: npm run setup
+      - name: Prepare bundled runtime (arch-matched)
+        run: node scripts/prepare-runtime.mjs --arch ${{ matrix.arch }}
 
       - name: Regenerate icons
         run: node scripts/generate-icons.mjs

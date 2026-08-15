@@ -21,7 +21,9 @@ while keeping the native window controls responsive.
 1. Electron creates the hidden frameless shell and loads `shell.html`.
 2. The shell is shown with a lightweight startup view.
 3. The main process starts the pinned Node.js runtime with
-   `@deepseek-ai/dsh web --port 0`.
+   `@deepseek-ai/dsh web --port 0`; the child's cwd is
+   `<userData>/harness-home/workspace` so the default Harness workspace is a
+   dedicated directory, not the user's whole home directory.
 4. It parses the loopback URL printed by Harness.
 5. A sandboxed `WebContentsView` loads that URL and fills the area below the
    42-pixel title bar.
@@ -37,7 +39,8 @@ of starting a second local service.
 - `main.js` selects `runtime/node.exe` on Windows and `runtime/node` on macOS;
   the cross-platform `scripts/prepare-runtime.mjs` downloads and double-checks
   the matching Node.js 24.19.0 archive (pinned SHA-256 + official
-  `SHASUMS256.txt`).
+  `SHASUMS256.txt`), supports `--arch x64|arm64`, and verifies the existing
+  binary's architecture from the PE/Mach-O header before reuse.
 - Windows removes the application menu; macOS installs a minimal app menu
   (About/Hide/Quit, Edit, Window) so Cmd+Q and clipboard shortcuts keep
   working, and sets the dock icon from `build/icon.png`.

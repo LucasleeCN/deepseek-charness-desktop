@@ -21,7 +21,7 @@
 
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, chmodSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, chmodSync, openSync, readSync, closeSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -45,6 +45,23 @@ const PINNED_SHA256 = {
 }
 
 const isForce = process.argv.includes('--force')
+
+/**
+ * Target CPU architecture for the bundled runtime. Defaults to the host
+ * architecture; `--arch x64|arm64` lets a release build prepare the runtime
+ * that matches the packaged app architecture (electron-builder cross-arch).
+ */
+function resolveTargetArch() {
+  const index = process.argv.indexOf('--arch')
+  if (index === -1) return process.arch
+  const value = process.argv[index + 1]
+  if (value !== 'x64' && value !== 'arm64') {
+    fail(`--arch must be followed by x64 or arm64 (found: ${String(value)})`)
+  }
+  return value
+}
+
+const TARGET_ARCH = resolveTargetArch()
 
 function fail(message) {
   console.error(`prepare-runtime: ${message}`)
@@ -99,7 +116,7 @@ function nodeBinaryName() {
 }
 
 function archiveForPlatform() {
-  const key = `${process.platform}-${process.arch}`
+  const key = `${process.platform}-${TARGET_ARCH}`
   switch (key) {
     case 'win32-x64': return 'node-v24.19.0-win-x64.zip'
     case 'darwin-arm64': return 'node-v24.19.0-darwin-arm64.tar.gz'
@@ -109,22 +126,65 @@ function archiveForPlatform() {
   }
 }
 
+/**
+ * Read the CPU architecture from the bundled binary itself (PE machine field
+ * on Windows, Mach-O cputype on macOS) so an existing runtime from a previous
+ * cross-arch build is never mistaken for the requested one.
+ */
+function readBinaryArch(binary) {
+  let fd = null
+  try {
+    const header = Buffer.alloc(4096)
+    fd = openSync(binary, 'r')
+    const bytesRead = readSync(fd, header, 0, header.length, 0)
+    if (bytesRead < 24) return null
+    if (process.platform === 'win32') {
+      if (header[0] !== 0x4D || header[1] !== 0x5A) return null
+      const peOffset = header.readUInt32LE(0x3C)
+      if (peOffset + 24 > header.length) return null
+      if (header.readUInt32LE(peOffset) !== 0x00004550) return null
+      return header.readUInt16LE(peOffset + 4) === 0x8664 ? 'x64' : null
+    }
+    if (header.readUInt32LE(0) === 0xFEEDFACF) {
+      const cpuType = header.readUInt32LE(4)
+      if (cpuType === 0x0100000C) return 'arm64'
+      if (cpuType === 0x01000007) return 'x64'
+    }
+    return null
+  } catch {
+    return null
+  } finally {
+    if (fd !== null) {
+      try { closeSync(fd) } catch { /* ignore */ }
+    }
+  }
+}
+
 function runtimeState() {
   const binary = join(RUNTIME_ROOT, nodeBinaryName())
   if (!existsSync(binary)) return { ready: false, binary }
+
+  const binaryArch = readBinaryArch(binary)
+  const archMatches = binaryArch === null
+    ? TARGET_ARCH === process.arch
+    : binaryArch === TARGET_ARCH
+  if (!archMatches) {
+    return { ready: false, binary, binaryArch, targetArch: TARGET_ARCH }
+  }
+
   try {
     const version = execFileSync(binary, ['--version'], { stdio: ['ignore', 'pipe', 'ignore'] })
       .toString().trim().replace(/^v/, '')
-    return { ready: version === NODE_VERSION, binary, version }
+    return { ready: version === NODE_VERSION, binary, binaryArch, targetArch: TARGET_ARCH, version }
   } catch {
     // Some constrained environments forbid pipe-based stdio capture. Fall
     // back to an execution-only probe: the runtime directory is versioned by
     // this script, so a successful `--version` exit is enough.
     try {
       execFileSync(binary, ['--version'], { stdio: ['ignore', 'ignore', 'ignore'] })
-      return { ready: true, binary, version: 'unknown' }
+      return { ready: true, binary, binaryArch, targetArch: TARGET_ARCH, version: 'unknown' }
     } catch {
-      return { ready: false, binary }
+      return { ready: false, binary, binaryArch, targetArch: TARGET_ARCH }
     }
   }
 }
@@ -218,17 +278,20 @@ function openTar(tarball) {
 }
 
 async function prepareRuntime() {
-  const { ready, binary } = runtimeState()
-  if (!isForce && ready) {
-    console.log(`Bundled Node.js runtime is already prepared (v${NODE_VERSION}).`)
+  const state = runtimeState()
+  if (!isForce && state.ready) {
+    console.log(`Bundled Node.js runtime is already prepared (v${NODE_VERSION}, ${TARGET_ARCH}).`)
     return
+  }
+  if (state.binaryArch && state.binaryArch !== TARGET_ARCH) {
+    console.log(`Replacing ${state.binaryArch} runtime with the requested ${TARGET_ARCH} runtime...`)
   }
 
   const archiveName = archiveForPlatform()
   const pinned = PINNED_SHA256[archiveName]
   if (pinned === undefined) fail(`no pinned SHA-256 for ${archiveName}`)
 
-  console.log(`Downloading Node.js v${NODE_VERSION} for ${process.platform}/${process.arch}...`)
+  console.log(`Downloading Node.js v${NODE_VERSION} for ${process.platform}/${TARGET_ARCH}...`)
   const [archive, shasums] = await Promise.all([
     fetchBytes(`${NODE_BASE}/${archiveName}`),
     fetchBytes(`${NODE_BASE}/SHASUMS256.txt`),
@@ -260,7 +323,7 @@ async function prepareRuntime() {
   const nodeLicense = findEntry(name => /(^|\/)LICENSE$/.test(name))
 
   mkdirSync(RUNTIME_ROOT, { recursive: true })
-  writeFileSync(binary, nodeBinary)
+  writeFileSync(state.binary, nodeBinary)
   if (nodeLicense) {
     writeFileSync(join(RUNTIME_ROOT, 'NODE-LICENSE.txt'), nodeLicense)
   } else {
@@ -269,10 +332,10 @@ async function prepareRuntime() {
   writeFileSync(join(RUNTIME_ROOT, 'SHASUMS256.txt'), shasums)
   if (process.platform !== 'win32') {
     try {
-      chmodSync(binary, 0o755)
+      chmodSync(state.binary, 0o755)
     } catch { /* best effort; macOS archives usually keep the mode intact */ }
   }
-  console.log(`Runtime ready: ${binary} (v${NODE_VERSION})`)
+  console.log(`Runtime ready: ${state.binary} (v${NODE_VERSION}, ${TARGET_ARCH})`)
 }
 
 // ---------------------------------------------------------------------------

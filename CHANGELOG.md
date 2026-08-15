@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Review fixes (macOS build review, 2026-08):
+  - Confine the Harness child process default workspace to
+    `<userData>/harness-home/workspace` instead of the user's whole home
+    directory.
+  - `scripts/prepare-runtime.mjs` now accepts `--arch x64|arm64` and detects
+    the existing binary architecture from the PE/Mach-O header, so
+    `ARCH=x64/arm64` builds can never ship a mismatched bundled Node runtime;
+    `build.sh`, `verify-macos.sh`, and the macOS CI pass the target arch.
+  - `build.sh` now rejects Node.js versions older than 24, matching
+    `verify-macos.sh`.
+  - Document the `ELECTRON_MIRROR` fallback for flaky Electron downloads.
 - Add macOS support: cross-platform runtime preparation
   (`scripts/prepare-runtime.mjs` with pinned Node.js macOS arm64/x64
   checksums), platform branch in `main.js`, generated `build/icon.icns`,

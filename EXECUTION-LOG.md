@@ -116,3 +116,28 @@ sis.warningsAsErrors=false：uninstaller 编译 pass 中 customInit 专用函数
   真机/模拟器连局域网宿主 → 输入实际 IP → 完成一次真实会话 → 验证设置/重连/
   重启记忆。本机未安装 DevEco/SDK，HAP 构建与端到端会话按计划留待用户执行。
 
+## M10 — macOS 真机构建结果 + Code Review 修复（2026-08-15）
+
+用户侧 macOS 构建与 QA（arm64）通过：
+
+- DMG：`dist/DeepSeek-Harness-Desktop-0.1.0-arm64.dmg`（332MB）；
+- SHA-256：`b0f9904bc21b361415abb61841a43422d66f80692fcc9c5fe555bf7dc7d6e1b6`；
+- `.app` ad-hoc 签名，`codesign --verify --deep --strict` 通过；
+- 产物真实启动 QA：Harness UI 加载成功、`Window controls QA passed`、退出时
+  Harness 正常停止；
+- 注：GitHub 下载 Electron 超时一次，用户改用
+  `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/` 后成功（已写入 README）。
+
+Code Review 三条结论均已修复：
+
+1. 【高】Harness cwd 从 `app.getPath('home')` 改为
+   `<userData>/harness-home/workspace`（main.js 创建目录并写入日志；verify-source
+   新增断言；README/ARCHITECTURE 同步说明）。
+2. 【中】`prepare-runtime.mjs` 新增 `--arch x64|arm64`，按目标架构选择归档；
+   复用检测改为读取二进制本身的 PE machine / Mach-O cputype，已有运行时与目标
+   架构不符时强制重下；`build.sh`、`verify-macos.sh`、macOS CI 均传 `--arch`。
+3. 【低】`build.sh` 新增 Node 主版本 ≥24 检查（与 verify-macos.sh 一致）。
+
+修复后本地回归：`npm run check` 通过（新增断言全部命中），Windows
+`npm run setup` / `npm run build:dir` 待最终提交前复跑。
+

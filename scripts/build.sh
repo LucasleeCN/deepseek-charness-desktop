@@ -8,7 +8,7 @@
 #
 # Usage:
 #   bash scripts/build.sh
-#   ARCH=arm64 bash scripts/build.sh     # optional explicit override
+#   ARCH=arm64 bash scripts/build.sh     # optional override; runtime matches ARCH
 #
 set -euo pipefail
 
@@ -26,6 +26,13 @@ for cmd in node npm npx codesign hdiutil; do
     exit 1
   fi
 done
+
+NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
+if [[ "$NODE_MAJOR" -lt 24 ]]; then
+  echo "build.sh: Node.js 24+ is required (found $(node -v))." >&2
+  echo "build.sh: install Node 24 (e.g. via nvm) and re-run." >&2
+  exit 1
+fi
 
 VERSION="$(node -p "require('./package.json').version")"
 HOST_ARCH="$(node -p "process.arch === 'arm64' ? 'arm64' : 'x64'")"
@@ -49,7 +56,7 @@ echo "==> [2/6] Source verification"
 npm run check
 
 echo "==> [3/6] Preparing bundled runtime (harness npm ci + Node.js ${ARCH})"
-npm run setup
+node scripts/prepare-runtime.mjs --arch "$ARCH"
 
 echo "==> [4/6] Regenerating icons (icon.png / icon.icns)"
 node scripts/generate-icons.mjs

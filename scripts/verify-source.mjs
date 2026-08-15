@@ -104,6 +104,25 @@ if (manifest.build?.mac?.hardenedRuntime !== false || manifest.build?.mac?.gatek
     throw new Error('build/icon.icns is not a valid ICNS container.')
   }
 }
+// Harness isolation policy (review 2026-08): the dsh child process must run in
+// a dedicated workspace under userData, never in the user's whole home dir.
+{
+  const mainJs = await fs.readFile(path.join(projectRoot, 'main.js'), 'utf8')
+  if (!mainJs.includes("dataPath('harness-home', 'workspace')")) {
+    throw new Error('main.js must confine the Harness cwd to <userData>/harness-home/workspace.')
+  }
+}
+// Cross-arch release policy: build.sh must prepare the runtime for the same
+// ARCH it hands to electron-builder, and must require Node.js 24.
+{
+  const buildSh = await fs.readFile(path.join(projectRoot, 'scripts/build.sh'), 'utf8')
+  if (!buildSh.includes('prepare-runtime.mjs --arch "$ARCH"')) {
+    throw new Error('scripts/build.sh must prepare the runtime for the packaged ARCH.')
+  }
+  if (!buildSh.includes('Node.js 24+ is required')) {
+    throw new Error('scripts/build.sh must reject Node.js versions older than 24.')
+  }
+}
 // HarmonyOS thin client policy (stage 3.2/3.3): one Web-based entry ability,
 // INTERNET permission, and the ArkWeb host-address flow must stay wired.
 {

@@ -57,8 +57,10 @@ npm start
 
 ### macOS
 
-Xcode Command Line Tools are also required (`xcode-select --install`) for native
-module compilation and electron-builder packaging.
+Node.js 24 and Xcode Command Line Tools are also required
+(`xcode-select --install`) for native module compilation and electron-builder
+packaging. If the Electron download from GitHub times out, retry with
+`export ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`.
 
 ```sh
 git clone <this repository>
@@ -92,7 +94,8 @@ non-system drive, and interactive installs may choose any path. Enforced by
 ### macOS
 
 On a Mac the host architecture is detected automatically (override with
-`ARCH=x64` or `ARCH=arm64`):
+`ARCH=x64` or `ARCH=arm64`; the same ARCH is passed to the bundled Node runtime
+preparation so the packaged app and runtime never mismatch):
 
 ```sh
 npm ci
@@ -226,11 +229,18 @@ macOS:   ~/Library/Application Support/deepseek-harness-desktop/harness-home
          ~/Library/Application Support/deepseek-harness-desktop/logs/desktop.log
 ```
 
+The Harness process's default workspace is
+`<userData>/harness-home/workspace` — it never starts in the entire user home
+directory. Other directories can be picked explicitly in the Harness UI.
+
 The HarmonyOS app persists only the host URL setting; no session data is stored.
 
 ## Security boundary
 
 - The desktop Harness service listens on a random `127.0.0.1` port;
+- the Harness child process is confined to
+  `<userData>/harness-home/workspace` as its default workspace, never the
+  user's home directory;
 - the official page runs in a `sandbox: true`, `contextIsolation: true`,
   `nodeIntegration: false` content view;
 - the custom title bar can only request minimize, maximize/restore, and close

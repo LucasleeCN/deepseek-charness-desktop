@@ -9,7 +9,8 @@
 #
 # The script performs every automated stage of the macOS acceptance:
 #   1. prerequisites (macOS, Node.js >= 24, Xcode CLT)
-#   2. npm ci (root) + npm run setup (bundled harness + pinned macOS Node runtime)
+#   2. npm ci (root) + node scripts/prepare-runtime.mjs --arch <arch>
+#      (bundled harness + pinned macOS Node runtime, arch-matched)
 #   3. icon regeneration + npm run check
 #   4. QA smoke: screenshot hook and window-controls hook (both auto-quit)
 #   5. build.sh -> ad-hoc signed dmg -> signature + mount verification
@@ -78,7 +79,7 @@ step "2/8 Install pinned dependencies (npm ci)"
 npm ci --no-audit --no-fund
 
 step "3/8 Prepare bundled runtime (harness npm ci + Node.js ${ARCH} download + checksum)"
-npm run setup
+node scripts/prepare-runtime.mjs --arch "$ARCH"
 
 step "4/8 Regenerate icons and verify source"
 node scripts/generate-icons.mjs

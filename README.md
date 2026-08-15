@@ -58,8 +58,8 @@ npm start
 
 ### macOS
 
-另需 Xcode Command Line Tools（`xcode-select --install`；`node-pty` 等原生模块编译与
-electron-builder 打包都需要）。
+另需 Node.js 24 与 Xcode Command Line Tools（`xcode-select --install`；
+`node-pty` 等原生模块编译与 electron-builder 打包都需要）。
 
 ```sh
 git clone <本仓库地址>
@@ -71,6 +71,8 @@ npm start
 
 首次在 macOS 上跑 QA 截图钩子时，系统会请求“屏幕录制”权限；不授权则截图 QA 按
 计划记录为跳过（`desktop.log` 中 `macOS screen capture unavailable`），不影响窗口控制 QA。
+如 GitHub 下载 Electron 超时，可用镜像后重跑：
+`export ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`。
 
 ## 构建发布包
 
@@ -95,7 +97,8 @@ npm run build:windows
 
 ### macOS
 
-在 Mac 上（本机架构自动识别，可用 `ARCH=x64` 或 `ARCH=arm64` 覆盖）：
+在 Mac 上（本机架构自动识别，可用 `ARCH=x64` 或 `ARCH=arm64` 覆盖；
+`ARCH` 会同步传给内置 Node 运行时的下载流程，避免架构错配）：
 
 ```sh
 npm ci
@@ -225,11 +228,17 @@ macOS:   ~/Library/Application Support/deepseek-harness-desktop/harness-home
          ~/Library/Application Support/deepseek-harness-desktop/logs/desktop.log
 ```
 
+Harness 进程的默认工作区为 `<userData>/harness-home/workspace`（不会以整个
+用户主目录作为工作根目录）；如需访问其他目录，在 Harness UI 的目录选择器中
+显式选择即可。
+
 鸿蒙端只持久化“宿主 URL”一项设置，不保存会话数据。
 
 ## 安全边界
 
 - 桌面端 Harness 服务只监听 `127.0.0.1` 的随机端口；
+- Harness 子进程的默认工作区被限制在 `<userData>/harness-home/workspace`，
+  不继承用户主目录；
 - 官方页面运行在 `sandbox: true`、`contextIsolation: true`、`nodeIntegration: false` 的内容视图中；
 - 自绘标题栏只能通过受限 IPC 请求最小化、最大化/还原和关闭；
 - 非本地导航交给系统浏览器，不允许页面直接访问 Node.js；
